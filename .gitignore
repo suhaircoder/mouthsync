@@ -1,0 +1,4 @@
+.env
+gateway/data/history/*
+!gateway/data/.gitkeep
+!gateway/data/history/.gitkeep
