@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from render_wav2lip import animate_face, backend_info, preload_models
+from render_wav2lip import animate_face, backend_info, preload_models, refine_video
 
 TEMP_DIR = Path(__file__).resolve().parent / "temp_files"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -48,7 +48,7 @@ app = FastAPI(title="MouthSync Wav2Lip worker", lifespan=lifespan)
 def health() -> dict:
     info = backend_info()
     status = "ok" if info.get("ready") else "loading"
-    return {"status": status, **info}
+    return {"status": status, "refine_supported": True, **info}
 
 
 @app.post("/infer")
@@ -86,4 +86,43 @@ async def infer(
         photo.file.close()
         audio.file.close()
         for p in (photo_path, audio_path):
+            _safe_unlink(p)
+
+
+@app.post("/refine")
+async def refine(
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...),
+    audio: UploadFile = File(...),
+    _: None = Depends(_require_key),
+):
+    """Existing talking-head video + audio → lip-sync refined MP4."""
+    job = uuid.uuid4().hex
+    video_path = TEMP_DIR / f"{job}_in{Path(video.filename or '').suffix or '.mp4'}"
+    audio_path = TEMP_DIR / f"{job}_audio{Path(audio.filename or '').suffix or '.wav'}"
+    out_path = TEMP_DIR / f"{job}_out.mp4"
+
+    try:
+        with video_path.open("wb") as f:
+            shutil.copyfileobj(video.file, f)
+        with audio_path.open("wb") as f:
+            shutil.copyfileobj(audio.file, f)
+
+        refine_video(str(video_path), str(audio_path), str(out_path))
+        background_tasks.add_task(_safe_unlink, out_path)
+        return FileResponse(
+            path=str(out_path),
+            media_type="video/mp4",
+            filename="refined.mp4",
+        )
+    except ValueError as e:
+        _safe_unlink(out_path)
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        _safe_unlink(out_path)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        video.file.close()
+        audio.file.close()
+        for p in (video_path, audio_path):
             _safe_unlink(p)

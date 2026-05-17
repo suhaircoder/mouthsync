@@ -21,14 +21,18 @@ import {
 } from "./photoConfig.js";
 import {
   buildWorkerHeaders,
+  hasWav2lipConfig,
   hasWorkerConfig,
+  hasLocalWorkerUrls,
   loadWorkerConfig,
+  mergeWorkerWithRemote,
   saveWorkerConfig,
   workerConfigForApi,
 } from "./workerConfig.js";
 
 const API_GENERATE = "/api/generate";
 const API_WORKER_STATUS = "/api/worker-status";
+const API_WAV2LIP_WORKER_STATUS = "/api/wav2lip-worker-status";
 const API_HISTORY = "/api/history";
 const API_CONFIG = "/api/config";
 
@@ -84,6 +88,51 @@ function formatHistoryDate(iso) {
   } catch {
     return iso;
   }
+}
+
+function videoDownloadProps(url, filename) {
+  const isRemote = url.startsWith("/");
+  return {
+    href: url,
+    download: filename,
+    ...(isRemote ? { target: "_blank", rel: "noreferrer" } : {}),
+  };
+}
+
+function ResultStage({ title, videoUrl, downloadName, loading, pendingHint }) {
+  return (
+    <div className={`result-stage ${loading ? "result-stage--loading" : ""}`}>
+      <div className="result-stage__head">
+        <h3 className="result-stage__title">{title}</h3>
+        {videoUrl && !loading ? (
+          <a className="link-quiet" {...videoDownloadProps(videoUrl, downloadName)}>
+            Скачать
+          </a>
+        ) : null}
+      </div>
+      <div className={`video-frame ${videoUrl || loading || pendingHint ? "" : "video-frame--empty"}`}>
+        {loading ? (
+          <div className="result-stage__loading">
+            <span className="btn__spinner" aria-hidden />
+            <p>Обработка…</p>
+          </div>
+        ) : videoUrl ? (
+          <video
+            key={videoUrl}
+            className="video"
+            src={videoUrl}
+            controls
+            playsInline
+            preload="metadata"
+          />
+        ) : pendingHint ? (
+          <div className="video-placeholder video-placeholder--compact">
+            <p>{pendingHint}</p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function FileDropZone({ id, label, hint, accept, disabled, file, onChange }) {
@@ -150,28 +199,82 @@ export default function App() {
   const audioSnapshotRef = useRef(null);
   const [workerUrl, setWorkerUrl] = useState("");
   const [workerApiKey, setWorkerApiKey] = useState("");
+  const [wav2lipWorkerUrl, setWav2lipWorkerUrl] = useState("");
+  const [wav2lipWorkerApiKey, setWav2lipWorkerApiKey] = useState("");
   const [envWorkerConfigured, setEnvWorkerConfigured] = useState(false);
+  const [envWav2lipConfigured, setEnvWav2lipConfigured] = useState(false);
   const [testingWorker, setTestingWorker] = useState(false);
+  const [testingWav2lip, setTestingWav2lip] = useState(false);
   const [status, setStatus] = useState({
     tone: "neutral",
-    text: "Укажите URL воркера RunPod в настройках ниже (или задайте WORKER_URL в .env).",
+    text: "Укажите адрес сервера генерации в настройках ниже.",
   });
-  const [videoUrl, setVideoUrl] = useState(null);
+  const [stage1Url, setStage1Url] = useState(null);
+  const [refinedUrl, setRefinedUrl] = useState(null);
+  const [refining, setRefining] = useState(false);
   const [historyItems, setHistoryItems] = useState([]);
   const [activeHistoryId, setActiveHistoryId] = useState(null);
-  const prevUrlRef = useRef(null);
+  const blobUrlsRef = useRef({ stage1: null, refined: null });
+  const skipWorkerAutosaveRef = useRef(true);
 
-  const workerConfig = { workerUrl, workerApiKey };
+  const workerConfig = {
+    workerUrl,
+    workerApiKey,
+    wav2lipWorkerUrl,
+    wav2lipWorkerApiKey,
+  };
   const workerHeaders = () => buildWorkerHeaders(workerConfig, apiHeaders());
 
-  const revokePrev = useCallback(() => {
-    if (prevUrlRef.current?.startsWith("blob:")) {
-      URL.revokeObjectURL(prevUrlRef.current);
+  const activeHistoryItem = historyItems.find((item) => item.id === activeHistoryId);
+  const hasRefinedResult = Boolean(refinedUrl);
+  const stage1Ready = Boolean(stage1Url && activeHistoryId);
+  const alreadyRefined = Boolean(hasRefinedResult || activeHistoryItem?.refined);
+  const refineServerReady = hasWav2lipConfig(workerConfig, envWav2lipConfigured);
+  const refineAvailable = stage1Ready && !alreadyRefined && refineServerReady;
+  const refineDisabled = loading || refining || !refineAvailable;
+
+  const refineHint = (() => {
+    if (refining) return null;
+    if (alreadyRefined) {
+      return "Второй этап уже выполнен — оба видео в блоке «Результат».";
     }
-    prevUrlRef.current = null;
+    if (!refineServerReady) {
+      return "Для этапа 2 укажите сервер улучшения губ в настройках.";
+    }
+    if (!stage1Ready) {
+      return "Этап 2 станет доступен после создания видео на этапе 1.";
+    }
+    if (loading) return "Дождитесь окончания этапа 1.";
+    return "Улучшает губы в уже созданном видео; оба варианта сохранятся для сравнения.";
+  })();
+
+  const revokeBlob = useCallback((slot) => {
+    const url = blobUrlsRef.current[slot];
+    if (url?.startsWith("blob:")) {
+      URL.revokeObjectURL(url);
+    }
+    blobUrlsRef.current[slot] = null;
   }, []);
 
-  useEffect(() => () => revokePrev(), [revokePrev]);
+  const revokeAllBlobs = useCallback(() => {
+    revokeBlob("stage1");
+    revokeBlob("refined");
+  }, [revokeBlob]);
+
+  const trackBlob = useCallback((slot, url) => {
+    revokeBlob(slot);
+    if (url?.startsWith("blob:")) {
+      blobUrlsRef.current[slot] = url;
+    }
+  }, [revokeBlob]);
+
+  const clearResults = useCallback(() => {
+    revokeAllBlobs();
+    setStage1Url(null);
+    setRefinedUrl(null);
+  }, [revokeAllBlobs]);
+
+  useEffect(() => () => revokeAllBlobs(), [revokeAllBlobs]);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -188,6 +291,8 @@ export default function App() {
     const saved = loadWorkerConfig();
     setWorkerUrl(saved.workerUrl);
     setWorkerApiKey(saved.workerApiKey);
+    setWav2lipWorkerUrl(saved.wav2lipWorkerUrl);
+    setWav2lipWorkerApiKey(saved.wav2lipWorkerApiKey);
 
     const hasStoredPhoto =
       typeof localStorage !== "undefined" &&
@@ -199,12 +304,12 @@ export default function App() {
     const applyRemote = (remote) => {
       if (!remote?.stored) return;
       if (remote.worker) {
-        const w = saveWorkerConfig({
-          workerUrl: remote.worker.workerUrl || "",
-          workerApiKey: remote.worker.workerApiKey || "",
-        });
+        const merged = mergeWorkerWithRemote(saved, remote.worker);
+        const w = saveWorkerConfig(merged);
         setWorkerUrl(w.workerUrl);
         setWorkerApiKey(w.workerApiKey);
+        setWav2lipWorkerUrl(w.wav2lipWorkerUrl);
+        setWav2lipWorkerApiKey(w.wav2lipWorkerApiKey);
       }
       if (remote.photo) {
         const p = savePhotoOptions(remote.photo);
@@ -220,7 +325,9 @@ export default function App() {
       .then((r) => r.json())
       .then((data) => {
         const envOk = Boolean(data.worker_configured);
+        const envW2l = Boolean(data.wav2lip_worker_configured);
         setEnvWorkerConfigured(envOk);
+        setEnvWav2lipConfigured(envW2l);
         if (!hasStoredPhoto && data.photo_prep) {
           const fromServer = photoOptionsFromServer(data.photo_prep);
           if (fromServer) setPhotoOptions(fromServer);
@@ -233,19 +340,21 @@ export default function App() {
           setStatus({
             tone: "neutral",
             text: saved.workerUrl
-              ? "URL воркера загружен из настроек браузера."
-              : "Используется WORKER_URL из .env на шлюзе.",
+              ? "Адрес сервера взят из сохранённых настроек."
+              : "Используется адрес сервера из конфигурации приложения.",
           });
         }
       })
       .catch(() => {});
 
     pullConfigFromServer().then((remote) => {
-      if (remote?.stored) {
-        applyRemote(remote);
+      if (!remote?.stored) return;
+      const hadLocal = hasLocalWorkerUrls(saved);
+      applyRemote(remote);
+      if (!hadLocal && hasLocalWorkerUrls(loadWorkerConfig())) {
         setStatus({
           tone: "neutral",
-          text: "Настройки загружены из MongoDB.",
+          text: "Адреса серверов подставлены из сохранённых настроек.",
         });
       }
     });
@@ -253,13 +362,37 @@ export default function App() {
     loadHistory();
   }, [loadHistory]);
 
+  useEffect(() => {
+    if (skipWorkerAutosaveRef.current) {
+      skipWorkerAutosaveRef.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      saveWorkerConfig({
+        workerUrl,
+        workerApiKey,
+        wav2lipWorkerUrl,
+        wav2lipWorkerApiKey,
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [workerUrl, workerApiKey, wav2lipWorkerUrl, wav2lipWorkerApiKey]);
+
   const playHistoryItem = (item) => {
-    revokePrev();
+    revokeAllBlobs();
     setActiveHistoryId(item.id);
-    setVideoUrl(item.video_url);
+    const s1 = item.video_stage1_url || item.video_url;
+    setStage1Url(s1);
+    if (item.refined && item.video_refined_url) {
+      setRefinedUrl(item.video_refined_url);
+    } else {
+      setRefinedUrl(null);
+    }
     setStatus({
       tone: "neutral",
-      text: `Из истории: ${item.photo_name} + ${item.audio_name}`,
+      text: `Из истории: ${item.photo_name} + ${item.audio_name}${
+        item.refined ? " (оба этапа)" : ""
+      }`,
     });
   };
 
@@ -271,8 +404,7 @@ export default function App() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (activeHistoryId === id) {
-        revokePrev();
-        setVideoUrl(null);
+        clearResults();
         setActiveHistoryId(null);
       }
       await loadHistory();
@@ -309,12 +441,12 @@ export default function App() {
   const onSavePhotoSettings = async () => {
     const saved = savePhotoOptions(photoOptions);
     setPhotoOptions(saved);
-    await pushConfigToServer({ workerUrl, workerApiKey }, saved, audioOptions);
+    await pushConfigToServer(workerConfig, saved, audioOptions);
     photoSnapshotRef.current = null;
     setPhotoModalOpen(false);
     setStatus({
       tone: "ok",
-      text: "Настройки фото сохранены (браузер и MongoDB).",
+      text: "Настройки фото сохранены.",
     });
   };
 
@@ -346,12 +478,12 @@ export default function App() {
   const onSaveAudioSettings = async () => {
     const saved = saveAudioOptions(audioOptions);
     setAudioOptions(saved);
-    await pushConfigToServer({ workerUrl, workerApiKey }, photoOptions, saved);
+    await pushConfigToServer(workerConfig, photoOptions, saved);
     audioSnapshotRef.current = null;
     setAudioModalOpen(false);
     setStatus({
       tone: "ok",
-      text: "Настройки аудио сохранены (браузер и MongoDB).",
+      text: "Настройки аудио сохранены.",
     });
   };
 
@@ -380,25 +512,30 @@ export default function App() {
 
   const onSaveWorkerSettings = async (e) => {
     e.preventDefault();
-    const saved = saveWorkerConfig({ workerUrl, workerApiKey });
+    const saved = saveWorkerConfig(workerConfig);
     setWorkerUrl(saved.workerUrl);
     setWorkerApiKey(saved.workerApiKey);
+    setWav2lipWorkerUrl(saved.wav2lipWorkerUrl);
+    setWav2lipWorkerApiKey(saved.wav2lipWorkerApiKey);
     await pushConfigToServer(saved, photoOptions, audioOptions);
     setStatus({
       tone: "ok",
-      text: "Настройки воркера сохранены (браузер и MongoDB).",
+      text: "Настройки серверов сохранены.",
     });
   };
 
   const onTestWorker = async () => {
+    const saved = saveWorkerConfig(workerConfig);
     setTestingWorker(true);
     try {
-      const res = await fetch(API_WORKER_STATUS, { headers: workerHeaders() });
+      const res = await fetch(API_WORKER_STATUS, {
+        headers: buildWorkerHeaders(saved, apiHeaders()),
+      });
       const data = await res.json().catch(() => ({}));
       if (data.ok) {
         setStatus({
           tone: "ok",
-          text: `Воркер доступен: ${data.worker_url}`,
+          text: "Связь с основным сервером установлена.",
         });
       } else {
         setStatus({
@@ -416,6 +553,108 @@ export default function App() {
     }
   };
 
+  const onTestWav2lip = async () => {
+    const saved = saveWorkerConfig(workerConfig);
+    setTestingWav2lip(true);
+    try {
+      const res = await fetch(API_WAV2LIP_WORKER_STATUS, {
+        headers: buildWorkerHeaders(saved, apiHeaders()),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok) {
+        const backend = data.worker?.backend;
+        if (backend === "sadtalker") {
+          setStatus({
+            tone: "err",
+            text:
+              "Это сервер этапа 1 (SadTalker). Для этапа 2 укажите отдельный Pod с образом mouthsync-worker-wav2lip.",
+          });
+        } else if (backend && backend !== "wav2lip") {
+          setStatus({
+            tone: "err",
+            text: `Этот сервер не подходит для этапа 2 (тип: ${backend}).`,
+          });
+        } else if (backend === "wav2lip" && data.worker?.ready === false) {
+          setStatus({
+            tone: "warn",
+            text: "Сервер Wav2Lip доступен, но модели ещё загружаются. Подождите минуту.",
+          });
+        } else if (!backend) {
+          setStatus({
+            tone: "err",
+            text:
+              "У этого сервера нет Wav2Lip. Для этапа 2 нужен образ mouthsync-worker-wav2lip.",
+          });
+        } else {
+          setStatus({
+            tone: "ok",
+            text: "Сервер для этапа 2 (Wav2Lip) готов.",
+          });
+        }
+      } else {
+        setStatus({
+          tone: "err",
+          text: data.detail || "Не удалось проверить сервер улучшения губ.",
+        });
+      }
+    } catch (err) {
+      setStatus({
+        tone: "err",
+        text: err?.message || String(err),
+      });
+    } finally {
+      setTestingWav2lip(false);
+    }
+  };
+
+  const onRefine = async () => {
+    if (!activeHistoryId) return;
+    if (!hasWav2lipConfig(workerConfig, envWav2lipConfigured)) {
+      setStatus({
+        tone: "warn",
+        text: "Укажите адрес сервера для второго этапа в настройках.",
+      });
+      setSettingsOpen(true);
+      return;
+    }
+
+    const saved = saveWorkerConfig(workerConfig);
+    await pushConfigToServer(saved, photoOptions, audioOptions);
+
+    setRefining(true);
+    setStatus({
+      tone: "neutral",
+      text: "Второй этап: улучшение губ… это может занять несколько минут.",
+    });
+
+    try {
+      const res = await fetch(`${API_HISTORY}/${activeHistoryId}/refine`, {
+        method: "POST",
+        headers: buildWorkerHeaders(saved, apiHeaders()),
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(apiErrorMessage(t, res.status));
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      trackBlob("refined", url);
+      setRefinedUrl(url);
+      await loadHistory();
+      setStatus({
+        tone: "ok",
+        text: "Второй этап готов. Сравните оба варианта ниже.",
+      });
+    } catch (err) {
+      setStatus({
+        tone: "err",
+        text: err?.message || String(err),
+      });
+    } finally {
+      setRefining(false);
+    }
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!photo || !audio) {
@@ -429,7 +668,7 @@ export default function App() {
     if (!hasWorkerConfig(workerConfig, envWorkerConfigured)) {
       setStatus({
         tone: "warn",
-        text: "Сначала укажите URL воркера в настройках или в .env.",
+        text: "Сначала укажите адрес сервера генерации в настройках.",
       });
       setSettingsOpen(true);
       return;
@@ -438,7 +677,7 @@ export default function App() {
     setLoading(true);
     setStatus({
       tone: "neutral",
-      text: "Отправляем на воркер… это может занять минуту или больше.",
+      text: "Первый этап: создание видео… это может занять минуту или больше.",
     });
 
     const form = new FormData();
@@ -448,12 +687,13 @@ export default function App() {
     appendAudioOptionsToFormData(form, audioOptions);
     savePhotoOptions(photoOptions);
     saveAudioOptions(audioOptions);
-    await pushConfigToServer({ workerUrl, workerApiKey }, photoOptions, audioOptions);
+    const saved = saveWorkerConfig(workerConfig);
+    await pushConfigToServer(saved, photoOptions, audioOptions);
 
     try {
       const res = await fetch(API_GENERATE, {
         method: "POST",
-        headers: workerHeaders(),
+        headers: buildWorkerHeaders(saved, apiHeaders()),
         body: form,
       });
       if (!res.ok) {
@@ -462,20 +702,21 @@ export default function App() {
       }
       const historyId = res.headers.get("X-History-Id");
       const blob = await res.blob();
-      revokePrev();
+      revokeAllBlobs();
       const url = URL.createObjectURL(blob);
-      prevUrlRef.current = url;
-      setVideoUrl(url);
+      trackBlob("stage1", url);
+      setStage1Url(url);
+      setRefinedUrl(null);
       setActiveHistoryId(historyId);
       await loadHistory();
       setStatus({
         tone: "ok",
         text: historyId
-          ? "Готово. Видео сохранено в истории на шлюзе."
-          : "Готово. Ниже результат — с автозапуском превью.",
+          ? "Первый этап готов. Просмотрите результат и при необходимости запустите улучшение губ."
+          : "Первый этап готов. Ниже превью — при необходимости запустите улучшение губ.",
       });
     } catch (err) {
-      setVideoUrl(null);
+      clearResults();
       setStatus({
         tone: "err",
         text: err?.message || String(err),
@@ -504,13 +745,13 @@ export default function App() {
         <div className="brand">
           <span className="brand__mark" aria-hidden />
           <div>
-            <p className="brand__eyebrow">локальный шлюз → удалённый GPU</p>
+            <p className="brand__eyebrow">фото и голос → говорящее видео</p>
             <h1 className="brand__title">MouthSync</h1>
           </div>
         </div>
         <p className="header__lead">
-          Один кадр и голос — на выходе короткое видео. URL воркера можно менять в
-          настройках при каждом новом Pod на RunPod.
+          Загрузите портрет и аудио — получите короткое видео. Адрес сервера можно
+          менять в настройках при смене облачного инстанса.
         </p>
       </header>
 
@@ -521,7 +762,7 @@ export default function App() {
           onClick={() => setSettingsOpen((v) => !v)}
           aria-expanded={settingsOpen}
         >
-          <h2 className="panel__title">Воркер (RunPod)</h2>
+          <h2 className="panel__title">Серверы</h2>
           <span className="settings-toggle__hint">
             {settingsOpen ? "Свернуть" : "Развернуть"}
           </span>
@@ -530,41 +771,75 @@ export default function App() {
         {settingsOpen ? (
           <form className="settings-form" onSubmit={onSaveWorkerSettings}>
             <label className="field">
-              <span className="field__label">WORKER_URL</span>
+              <span className="field__label">Основной сервер (первый этап)</span>
               <input
                 className="field__input"
                 type="url"
-                placeholder="https://pod-id-8000.proxy.runpod.net"
+                placeholder="https://sadtalker-pod-8000.proxy.runpod.net"
                 value={workerUrl}
                 onChange={(e) => setWorkerUrl(e.target.value)}
                 disabled={loading}
                 autoComplete="off"
               />
               <span className="field__hint">
-                Без слэша в конце. После нового Pod в RunPod обновите и нажмите «Сохранить».
+                Первый этап: фото + аудио → видео. Без слэша в конце.
               </span>
             </label>
 
             <label className="field">
-              <span className="field__label">WORKER_API_KEY</span>
+              <span className="field__label">Сервер улучшения губ (второй этап)</span>
+              <input
+                className="field__input"
+                type="url"
+                placeholder="https://wav2lip-pod-8000.proxy.runpod.net"
+                value={wav2lipWorkerUrl}
+                onChange={(e) => setWav2lipWorkerUrl(e.target.value)}
+                disabled={loading}
+                autoComplete="off"
+              />
+              <span className="field__hint">
+                Необязательно. Второй этап запускается кнопкой под превью.
+              </span>
+            </label>
+
+            <label className="field">
+              <span className="field__label">Ключ доступа к основному серверу</span>
               <input
                 className="field__input"
                 type="password"
-                placeholder="если задан на воркере"
+                placeholder="если требуется сервером"
                 value={workerApiKey}
                 onChange={(e) => setWorkerApiKey(e.target.value)}
                 disabled={loading}
                 autoComplete="off"
               />
               <span className="field__hint">
-                Секрет для заголовка X-Worker-Key. Хранится только в этом браузере.
+                Хранится только в этом браузере на вашем устройстве.
               </span>
+            </label>
+
+            <label className="field">
+              <span className="field__label">Ключ для второго сервера (если другой)</span>
+              <input
+                className="field__input"
+                type="password"
+                placeholder="необязательно"
+                value={wav2lipWorkerApiKey}
+                onChange={(e) => setWav2lipWorkerApiKey(e.target.value)}
+                disabled={loading}
+                autoComplete="off"
+              />
             </label>
 
             {envWorkerConfigured && !workerUrl.trim() ? (
               <p className="settings-env-note">
-                На шлюзе задан <code className="code">WORKER_URL</code> в .env —
-                будет использован, если поле выше пустое.
+                Адрес основного сервера задан администратором — подставится, если поле
+                выше пустое.
+              </p>
+            ) : null}
+            {envWav2lipConfigured && !wav2lipWorkerUrl.trim() ? (
+              <p className="settings-env-note">
+                Адрес сервера для второго этапа задан администратором.
               </p>
             ) : null}
 
@@ -578,7 +853,15 @@ export default function App() {
                 disabled={loading || testingWorker}
                 onClick={onTestWorker}
               >
-                {testingWorker ? "Проверка…" : "Проверить связь"}
+                {testingWorker ? "…" : "Проверить основной"}
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                disabled={loading || testingWav2lip}
+                onClick={onTestWav2lip}
+              >
+                {testingWav2lip ? "…" : "Проверить второй"}
               </button>
             </div>
           </form>
@@ -662,22 +945,47 @@ export default function App() {
               <span className="photo-settings-bar__summary">{audioSettingsSummary}</span>
             </div>
 
-            <div className="form__actions">
-              <button
-                type="submit"
-                className="btn btn--primary"
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <span className="btn__spinner" aria-hidden />
-                    Генерация…
-                  </>
-                ) : (
-                  "Собрать видео"
-                )}
-              </button>
+            <div className="form__actions form__actions--pipeline">
+              <div className="pipeline-step">
+                <span className="pipeline-step__label">Этап 1</span>
+                <button
+                  type="submit"
+                  className="btn btn--primary"
+                  disabled={loading || refining}
+                >
+                  {loading ? (
+                    <>
+                      <span className="btn__spinner" aria-hidden />
+                      Создание…
+                    </>
+                  ) : (
+                    "Создать видео"
+                  )}
+                </button>
+              </div>
+              <div className="pipeline-step">
+                <span className="pipeline-step__label">Этап 2</span>
+                <button
+                  type="button"
+                  className="btn btn--stage2"
+                  disabled={refineDisabled}
+                  title={refineDisabled && refineHint ? refineHint : undefined}
+                  onClick={onRefine}
+                >
+                  {refining ? (
+                    <>
+                      <span className="btn__spinner" aria-hidden />
+                      Улучшение…
+                    </>
+                  ) : (
+                    "Улучшить губы"
+                  )}
+                </button>
+              </div>
             </div>
+            {refineHint ? (
+              <p className="form__pipeline-hint">{refineHint}</p>
+            ) : null}
           </form>
 
           <p className={statusClass} role="status" aria-live="polite">
@@ -688,34 +996,37 @@ export default function App() {
         <section className="panel panel--output">
           <div className="panel__head">
             <h2 className="panel__title">Результат</h2>
-            {videoUrl ? (
-              <a
-                className="link-quiet"
-                href={videoUrl}
-                download="animated.mp4"
-                {...(videoUrl.startsWith("/") ? { target: "_blank", rel: "noreferrer" } : {})}
-              >
-                Скачать MP4
-              </a>
-            ) : null}
           </div>
 
-          <div className={`video-frame ${videoUrl ? "" : "video-frame--empty"}`}>
-            {videoUrl ? (
-              <video
-                key={videoUrl}
-                className="video"
-                src={videoUrl}
-                controls
-                autoPlay
-                playsInline
+          <div className="result-stack">
+            {stage1Url ? (
+              <ResultStage
+                title="Этап 1 — создание видео"
+                videoUrl={stage1Url}
+                downloadName="etap-1.mp4"
               />
             ) : (
-              <div className="video-placeholder">
-                <span className="video-placeholder__ring" aria-hidden />
-                <p>Превью появится здесь после генерации.</p>
+              <div className="video-frame video-frame--empty">
+                <div className="video-placeholder">
+                  <span className="video-placeholder__ring" aria-hidden />
+                  <p>Превью первого этапа появится здесь.</p>
+                </div>
               </div>
             )}
+
+            {refinedUrl || refining ? (
+              <ResultStage
+                title="Этап 2 — улучшение губ"
+                videoUrl={refinedUrl}
+                downloadName="etap-2.mp4"
+                loading={refining}
+              />
+            ) : stage1Ready && !alreadyRefined && refineServerReady ? (
+              <ResultStage
+                title="Этап 2 — улучшение губ"
+                pendingHint="Нажмите «Улучшить губы» после просмотра первого видео."
+              />
+            ) : null}
           </div>
         </section>
 
@@ -734,8 +1045,7 @@ export default function App() {
 
           {historyItems.length === 0 ? (
             <p className="history-empty">
-              Пока пусто. После генерации записи появятся здесь и сохранятся в
-              MongoDB (файлы — GridFS).
+              Пока пусто. После генерации ваши работы появятся здесь.
             </p>
           ) : (
             <ul className="history-list">
@@ -754,6 +1064,7 @@ export default function App() {
                     </span>
                     <span className="history-item__files">
                       {item.photo_name} · {item.audio_name}
+                      {item.refined ? " · улучшено" : ""}
                     </span>
                   </button>
                   <button
@@ -770,12 +1081,6 @@ export default function App() {
           )}
         </section>
       </main>
-
-      <footer className="footer">
-        <span className="footer__dot" aria-hidden />
-        Настройки воркера в браузере перекрывают .env на шлюзе. При смене Pod
-        обновите URL и нажмите «Проверить связь».
-      </footer>
 
       <PhotoSettingsModal
         open={photoModalOpen}

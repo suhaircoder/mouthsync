@@ -60,7 +60,7 @@ export default function PhotoSettingsModal({
                 disabled={loading}
                 onChange={(e) => setPhotoField("prepEnabled", e.target.checked)}
               />
-              <span className="editor-toggle__label">Обработка на шлюзе</span>
+              <span className="editor-toggle__label">Подготовка перед генерацией</span>
             </label>
           </EditorSection>
 

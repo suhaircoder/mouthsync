@@ -35,7 +35,14 @@ class Wav2LipEngine:
             (WAV2LIP_ROOT / "temp").mkdir(parents=True, exist_ok=True)
             self._verified = True
 
-    def generate(self, image_path: str, audio_path: str, output_video_path: str) -> None:
+    def _run_inference(
+        self,
+        face_path: str,
+        audio_path: str,
+        output_video_path: str,
+        *,
+        static: bool,
+    ) -> None:
         self.verify()
         out = Path(output_video_path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -46,13 +53,13 @@ class Wav2LipEngine:
             "--checkpoint_path",
             str(CHECKPOINT_PATH),
             "--face",
-            image_path,
+            face_path,
             "--audio",
             audio_path,
             "--outfile",
             str(out),
             "--static",
-            "True",
+            "True" if static else "False",
             "--fps",
             FPS,
             "--wav2lip_batch_size",
@@ -73,12 +80,19 @@ class Wav2LipEngine:
             err = (proc.stderr or proc.stdout or "").strip()
             if "Face not detected" in err:
                 raise ValueError(
-                    "Face not detected in image. Use a clear front-facing portrait."
+                    "Face not detected. Use a clear front-facing portrait or video with a visible face."
                 )
             raise RuntimeError(f"Wav2Lip failed: {err[-2000:]}")
 
         if not out.is_file() or out.stat().st_size < 256:
             raise RuntimeError("Wav2Lip did not produce a valid output video.")
+
+    def generate(self, image_path: str, audio_path: str, output_video_path: str) -> None:
+        self._run_inference(image_path, audio_path, output_video_path, static=True)
+
+    def refine_video(self, video_path: str, audio_path: str, output_video_path: str) -> None:
+        """Re-sync lips in an existing video (post-process after SadTalker etc.)."""
+        self._run_inference(video_path, audio_path, output_video_path, static=False)
 
 
 _engine: Wav2LipEngine | None = None
@@ -97,6 +111,10 @@ def preload_models() -> None:
 
 def animate_face(image_path: str, audio_path: str, output_video_path: str) -> None:
     get_engine().generate(image_path, audio_path, output_video_path)
+
+
+def refine_video(video_path: str, audio_path: str, output_video_path: str) -> None:
+    get_engine().refine_video(video_path, audio_path, output_video_path)
 
 
 def backend_info() -> dict:

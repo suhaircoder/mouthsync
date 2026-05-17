@@ -8,12 +8,27 @@ from typing import Any
 from db import get_db, mongo_enabled
 
 
-def _normalize_worker(raw: dict[str, Any] | None) -> dict[str, str]:
+def _normalize_worker(raw: dict[str, Any] | None) -> dict[str, Any]:
     if not raw:
-        return {"url": "", "api_key": ""}
+        return {
+            "url": "",
+            "api_key": "",
+            "wav2lip_url": "",
+            "wav2lip_api_key": "",
+            "refine_enabled": False,
+        }
     return {
         "url": (raw.get("url") or raw.get("workerUrl") or "").strip().rstrip("/"),
         "api_key": (raw.get("api_key") or raw.get("workerApiKey") or "").strip(),
+        "wav2lip_url": (
+            raw.get("wav2lip_url") or raw.get("wav2lipWorkerUrl") or ""
+        ).strip().rstrip("/"),
+        "wav2lip_api_key": (
+            raw.get("wav2lip_api_key") or raw.get("wav2lipWorkerApiKey") or ""
+        ).strip(),
+        "refine_enabled": bool(
+            raw.get("refine_enabled", raw.get("refineEnabled", False))
+        ),
     }
 
 
@@ -65,10 +80,13 @@ def _normalize_photo(raw: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def worker_for_api(stored: dict[str, str]) -> dict[str, str]:
+def worker_for_api(stored: dict[str, Any]) -> dict[str, Any]:
     return {
         "workerUrl": stored.get("url", ""),
         "workerApiKey": stored.get("api_key", ""),
+        "wav2lipWorkerUrl": stored.get("wav2lip_url", ""),
+        "wav2lipWorkerApiKey": stored.get("wav2lip_api_key", ""),
+        "refineEnabled": bool(stored.get("refine_enabled", False)),
     }
 
 

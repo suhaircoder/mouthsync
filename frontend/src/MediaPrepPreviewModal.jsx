@@ -85,7 +85,7 @@ export default function MediaPrepPreviewModal({
   const beforeMeta = before || (originalName ? { filename: originalName } : null);
 
   const subtitle = prepEnabled
-    ? "Слева — исходный файл, справа — после настроек на шлюзе (на воркер уйдёт правый вариант)."
+    ? "Слева — исходный файл, справа — с учётом ваших настроек (на генерацию уйдёт правый вариант)."
     : "Обработка отключена — файлы совпадают с исходником.";
 
   return (
@@ -121,13 +121,13 @@ export default function MediaPrepPreviewModal({
 
         <div className="modal__body">
           {loading ? (
-            <p className="prep-preview__loading">Готовим сравнение на шлюзе…</p>
+            <p className="prep-preview__loading">Готовим предпросмотр…</p>
           ) : (
             <div className="prep-preview">
               <MediaColumn
                 kind={kind}
                 label="До"
-                hint="Загруженный файл без обработки на шлюзе."
+                hint="Как вы загрузили файл."
                 media={beforeMeta}
                 originalSrc={originalSrc}
               />

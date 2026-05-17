@@ -67,7 +67,7 @@ export default function AudioSettingsModal({
                 disabled={loading}
                 onChange={(e) => setAudioField("prepEnabled", e.target.checked)}
               />
-              <span className="editor-toggle__label">Обработка на шлюзе</span>
+              <span className="editor-toggle__label">Подготовка перед генерацией</span>
             </label>
           </EditorSection>
 
@@ -165,7 +165,7 @@ export default function AudioSettingsModal({
             </label>
           </EditorSection>
 
-          <EditorSection title="Формат" hint="На воркер уходит WAV." muted={prepOff}>
+          <EditorSection title="Формат" hint="Для генерации используется WAV." muted={prepOff}>
             <label className="field field--compact">
               <span className="field__label">Макс. длительность (с)</span>
               <input

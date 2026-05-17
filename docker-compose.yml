@@ -58,6 +58,8 @@ services:
       # Optional default from .env; otherwise URL is set in UI (browser localStorage)
       WORKER_URL: ${WORKER_URL:-}
       WORKER_API_KEY: ${WORKER_API_KEY:-}
+      WAV2LIP_WORKER_URL: ${WAV2LIP_WORKER_URL:-}
+      WAV2LIP_WORKER_API_KEY: ${WAV2LIP_WORKER_API_KEY:-}
       WORKER_TIMEOUT_SEC: ${WORKER_TIMEOUT_SEC:-600}
       FACE_CHECK_ENABLED: ${FACE_CHECK_ENABLED:-1}
       FACE_REQUIRE_SINGLE: ${FACE_REQUIRE_SINGLE:-1}

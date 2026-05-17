@@ -32,6 +32,8 @@ Pod: **GPU**, **Expose HTTP ports `8000`**, disk **≥ 15 GB**.
 ## API
 
 - `GET /health` → `"backend":"wav2lip"`, `"ready":true`
+- `POST /infer` — photo + audio → MP4 (static face)
+- `POST /refine` — **video** + audio → MP4 (lip-sync on existing talking-head video)
 - `POST /infer` — `photo` + `audio` → MP4
 
 Often faster than SadTalker; RunPod HTTP proxy ~100s limit — use short audio for tests.
