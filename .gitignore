@@ -2,3 +2,10 @@
 gateway/data/history/*
 !gateway/data/.gitkeep
 !gateway/data/history/.gitkeep
+
+.cursorignore
+
+# JS (host may have empty mount dir; real deps live in Docker volume)
+node_modules/
+frontend/dist/
+frontend/node_modules/

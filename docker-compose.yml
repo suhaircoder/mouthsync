@@ -30,17 +30,53 @@ services:
               count: 1
               capabilities: [gpu]
 
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+
   gateway:
     build: ./gateway
     ports:
       - "8000:8000"
     volumes:
       - ./gateway/data:/app/data
+    depends_on:
+      mongo:
+        condition: service_healthy
     environment:
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017}
+      MONGODB_DB: ${MONGODB_DB:-mouthsync}
       # Optional default from .env; otherwise URL is set in UI (browser localStorage)
       WORKER_URL: ${WORKER_URL:-}
       WORKER_API_KEY: ${WORKER_API_KEY:-}
       WORKER_TIMEOUT_SEC: ${WORKER_TIMEOUT_SEC:-600}
+      FACE_CHECK_ENABLED: ${FACE_CHECK_ENABLED:-1}
+      FACE_REQUIRE_SINGLE: ${FACE_REQUIRE_SINGLE:-1}
+      FACE_MIN_SIZE_RATIO: ${FACE_MIN_SIZE_RATIO:-0.08}
+      FACE_AUTO_CROP: ${FACE_AUTO_CROP:-1}
+      PHOTO_MAX_EDGE: ${PHOTO_MAX_EDGE:-2048}
+      PHOTO_BRIGHTNESS: ${PHOTO_BRIGHTNESS:-1.0}
+      PHOTO_CONTRAST: ${PHOTO_CONTRAST:-1.0}
+      PHOTO_SHARPNESS: ${PHOTO_SHARPNESS:-1.0}
+      PHOTO_JPEG_QUALITY: ${PHOTO_JPEG_QUALITY:-92}
+      AUDIO_DELAY_MS: ${AUDIO_DELAY_MS:-0}
+      AUDIO_TRIM_SILENCE: ${AUDIO_TRIM_SILENCE:-0}
+      AUDIO_TRIM_THRESHOLD_DB: ${AUDIO_TRIM_THRESHOLD_DB:--40}
+      AUDIO_GAIN_DB: ${AUDIO_GAIN_DB:-0}
+      AUDIO_NORMALIZE_PEAK: ${AUDIO_NORMALIZE_PEAK:-0}
+      AUDIO_MAX_DURATION_SEC: ${AUDIO_MAX_DURATION_SEC:-0}
+      AUDIO_SAMPLE_RATE_HZ: ${AUDIO_SAMPLE_RATE_HZ:-0}
+      AUDIO_FORCE_MONO: ${AUDIO_FORCE_MONO:-1}
+      AUDIO_PLAYBACK_SPEED: ${AUDIO_PLAYBACK_SPEED:-1}
 
   frontend:
     build: ./frontend
@@ -56,3 +92,4 @@ services:
 
 volumes:
   frontend_node_modules:
+  mongo_data:
