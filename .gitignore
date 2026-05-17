@@ -3,6 +3,17 @@ gateway/data/history/*
 !gateway/data/.gitkeep
 !gateway/data/history/.gitkeep
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
 .cursorignore
 
 # JS (host may have empty mount dir; real deps live in Docker volume)
