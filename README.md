@@ -8,6 +8,25 @@
 
 **Full RunPod walkthrough (from scratch):** [RUNPOD.md](./RUNPOD.md)
 
+**UI screenshots:** [screenshots/](./screenshots/) — add interface images there (see [screenshots/README.md](./screenshots/README.md) for naming).
+
+---
+
+## Screenshots
+
+Add PNG/JPG files to **[`screenshots/`](./screenshots/)** and they will appear here, for example:
+
+<!-- Uncomment after you add files:
+![Main screen](./screenshots/01-main.png)
+![Worker settings](./screenshots/02-worker-settings.png)
+![History](./screenshots/03-history.png)
+-->
+
+| | |
+|---|---|
+| *Main screen* | *History* |
+| *(add `screenshots/01-main.png`)* | *(add `screenshots/03-history.png`)* |
+
 ---
 
 ## Docker images
