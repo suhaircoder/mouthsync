@@ -7,13 +7,13 @@ From zero to working generation: image on Docker Hub → Pod on RunPod → UI on
 ## Architecture
 
 ```
-[Browser :3000]  →  [Gateway :8000]  →  [Worker on RunPod :8000]
+[Browser :3000]  →  [Backend :8000]  →  [Worker on RunPod :8000]
      UI                  local Docker          GPU/CPU in cloud
 ```
 
-- **UI and gateway** — on your machine (Docker Compose).
+- **UI and backend** — on your machine (Docker Compose).
 - **Worker** — your container image on RunPod; accepts photo + audio, returns MP4.
-- Generation history is stored **on the gateway** (`gateway/data/history/`), not on RunPod.
+- Generation history is stored **on the backend** (`backend/data/history/`), not on RunPod.
 
 ---
 
@@ -21,7 +21,7 @@ From zero to working generation: image on Docker Hub → Pod on RunPod → UI on
 
 | Requirement | Why |
 |-------------|-----|
-| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Build images and run local UI/gateway |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Build images and run local UI/backend |
 | [Docker Hub](https://hub.docker.com/) account | Publish image for RunPod |
 | [RunPod](https://www.runpod.io/) account + balance | GPU/CPU Pod |
 | `mouthsync` repo | Project code |
@@ -30,7 +30,9 @@ On Mac (Apple Silicon), the RunPod image is built for **`linux/amd64`** — alre
 
 ---
 
-## Part 1. Build and publish the worker image
+## Part 1. Build and publish worker images
+
+Two images for the two-stage pipeline: **SadTalker** (stage 1) and **Wav2Lip** (stage 2).
 
 ### 1.1. Open the project
 
@@ -47,69 +49,36 @@ make hub-login
 
 Enter username and password **or** an [Access Token](https://hub.docker.com/settings/security) (recommended instead of password).
 
-### 1.3. Build and push
+### 1.3. Build and push (both workers)
 
 ```bash
-make worker-publish
+make worker-publish-ready
 ```
 
-This:
-
-- builds `./runpod-worker` for **linux/amd64**;
-- tags `docker.io/<DOCKER_USER>/mouthsync-worker:latest`;
-- pushes to Docker Hub.
-
-First build may take **10–20 minutes** (opencv, mediapipe, ffmpeg).
-
-### 1.4. Test the image locally (optional)
+Or separately:
 
 ```bash
-docker run --rm -p 8000:8000 docker.io/$DOCKER_USER/mouthsync-worker:latest
+make worker-sadtalker-publish   # stage 1 — ./runpod-worker-sadtalker
+make worker-wav2lip-publish     # stage 2 — ./runpod-worker-wav2lip
 ```
 
-In another terminal:
+Images:
+
+- `docker.io/<DOCKER_USER>/mouthsync-worker-sadtalker:latest`
+- `docker.io/<DOCKER_USER>/mouthsync-worker-wav2lip:latest`
+
+SadTalker first build: **30–60+ min** (PyTorch + checkpoints). Wav2Lip: **15–30+ min**.
+
+### 1.4. Test locally (optional, GPU)
 
 ```bash
-curl -sS http://127.0.0.1:8000/health
+docker run --rm -p 9001:8000 docker.io/$DOCKER_USER/mouthsync-worker-sadtalker:latest
+curl -sS http://127.0.0.1:9001/health
 ```
 
-Expected: `{"status":"ok"}`. Stop the container (`Ctrl+C`).
+### 1.5. Make images public (if RunPod cannot pull private)
 
-### 1.5. Make the image public (if RunPod cannot pull private)
-
-Docker Hub → repository `mouthsync-worker` → **Settings** → **Public**.
-
----
-
-## Part 1b. SadTalker GPU worker (optional)
-
-Same API (`/health`, `/infer`), different image — SadTalker neural model. Requires a **GPU Pod**.
-
-```bash
-export DOCKER_USER=your_username
-make worker-sadtalker-publish
-```
-
-Image: `docker.io/<DOCKER_USER>/mouthsync-worker-sadtalker:latest`
-
-| Parameter | Value |
-|-----------|--------|
-| Build | 30–60+ min (PyTorch + checkpoints) |
-| Disk | ≥ 20 GB |
-| RunPod | **GPU** (RTX 3090/4090, etc.) |
-| HTTP port | **8000** |
-
-On the Pod set **Container Image** to `mouthsync-worker-sadtalker:latest`, not the lite `mouthsync-worker`.
-
-In MouthSync UI you only change **WORKER_URL** to this Pod’s URL.
-
-### Wav2Lip GPU worker (optional)
-
-```bash
-make worker-wav2lip-publish
-```
-
-Image: `mouthsync-worker-wav2lip:latest` — often faster than SadTalker; same RunPod rules (GPU, port 8000).
+Docker Hub → each repository → **Settings** → **Public**.
 
 ---
 
@@ -118,22 +87,22 @@ Image: `mouthsync-worker-wav2lip:latest` — often faster than SadTalker; same R
 Goal: run **only** the MouthSync worker in the cloud — your image from Docker Hub.  
 RunPod Jupyter/SadTalker/ML templates **do not work** without rewriting the API.
 
-### 2.0. Target state
+### 2.0. Target state (two Pods)
 
-| Parameter | Value |
-|-----------|--------|
-| Image | `docker.io/<DOCKER_USER>/mouthsync-worker:latest` |
-| Container port | **8000** |
-| Public URL | `https://<POD_ID>-8000.proxy.runpod.net` |
-| Check | `GET /health` → `{"status":"ok"}` |
+| Pod | Image | UI field | Check |
+|-----|--------|----------|--------|
+| Stage 1 | `mouthsync-worker-sadtalker:latest` | **WORKER_URL** | `GET /health` → `backend: sadtalker` |
+| Stage 2 | `mouthsync-worker-wav2lip:latest` | **Wav2Lip URL** | `GET /health` → `refine_supported: true` |
+
+Port **8000** on each; URL `https://<POD_ID>-8000.proxy.runpod.net`.
 
 ### 2.1. Before RunPod
 
-1. Image is on Docker Hub after `make worker-publish` (Part 1).
+1. Images are on Docker Hub after `make worker-publish-ready` (Part 1).
 2. Repository is **Public** or RunPod credentials are set for private.
 3. Note the full image string, e.g.:
 
-   `docker.io/alnosila1s/mouthsync-worker:latest`
+   `docker.io/<DOCKER_USER>/mouthsync-worker-sadtalker:latest`
 
 4. (Recommended) Generate a worker secret:
 
@@ -150,14 +119,14 @@ RunPod Jupyter/SadTalker/ML templates **do not work** without rewriting the API.
 3. Left menu: **Pods** (not Serverless).
 4. Click **Deploy** / **+ GPU Pod** (wording varies).
 
-### 2.3. Hardware (GPU / CPU)
+### 2.3. Hardware (GPU)
 
-Current lite MouthSync worker is **CPU** (OpenCV + MediaPipe); **GPU not required**.
+SadTalker and Wav2Lip require **NVIDIA GPU** (e.g. RTX 3090 / 4090 / A5000). Avoid H100/L40 with the default PyTorch 2.1 image unless you upgrade the base image.
 
-| Option | When to use |
-|--------|-------------|
-| **Cheap CPU Pod** | Tests and short clips |
-| **GPU** | SadTalker, Wav2Lip, or other neural backends |
+| Pod | Image | UI field |
+|-----|--------|----------|
+| Stage 1 | `mouthsync-worker-sadtalker:latest` | **WORKER_URL** |
+| Stage 2 | `mouthsync-worker-wav2lip:latest` | **Wav2Lip URL** |
 
 Tips:
 
@@ -174,7 +143,8 @@ Use **your** image, not “PyTorch + Jupyter”.
 1. Find **Container Image** / **Image Name**.
 2. Paste the **full** name:
 
-   `docker.io/<DOCKER_USER>/mouthsync-worker:latest`
+   `docker.io/<DOCKER_USER>/mouthsync-worker-sadtalker:latest`  
+   (second Pod: `mouthsync-worker-wav2lip:latest`)
 
 3. **Do not** pick templates like Jupyter on port 8888 — different software and ports.
 
@@ -190,7 +160,7 @@ Use **your** image, not “PyTorch + Jupyter”.
 
 | Mistake | Result |
 |---------|--------|
-| `mouthsync-worker:latest` without `docker.io/user/` | Pull may fail |
+| `mouthsync-worker-sadtalker:latest` without `docker.io/user/` | Pull may fail |
 | Jupyter template on 8888 | 404 + Jupyter HTML in MouthSync |
 | Stale `:latest` cache | Stop → Start Pod or create new Pod |
 
@@ -295,7 +265,7 @@ curl -sS -H "X-Worker-Key: your_secret" \
   "https://<POD_ID>-8000.proxy.runpod.net/health"
 ```
 
-From local gateway:
+From local backend:
 
 ```bash
 curl -sS "http://127.0.0.1:8000/api/worker-status" \
@@ -335,9 +305,9 @@ After tests: **Stop** Pod locally `make down`.
 
 ---
 
-## Part 3. Run MouthSync locally (UI + gateway)
+## Part 3. Run MouthSync locally (UI + backend)
 
-Worker is on RunPod; locally you only run **UI and gateway**.
+Worker is on RunPod; locally you only run **UI and backend**.
 
 ### 3.1. `.env` file
 
@@ -373,9 +343,9 @@ Check:
 make ps
 ```
 
-Expect **frontend** (:3000) and **gateway** (:8000). **worker** service not needed in this mode.
+Expect **frontend** (:3000) and **backend** (:8000). **worker** service not needed in this mode.
 
-### 3.3. Gateway checks
+### 3.3. Backend checks
 
 ```bash
 curl -sS http://127.0.0.1:8000/health
@@ -409,12 +379,12 @@ Settings are in **browser** localStorage. After a **new Pod**, update URL here.
 
 First run may take seconds to a minute+ depending on audio length and Pod power.
 
-**SadTalker/Wav2Lip:** RunPod HTTP proxy ~**100s** limit — use **5–15s** audio for tests; see gateway error message on 524.
+**SadTalker/Wav2Lip:** RunPod HTTP proxy ~**100s** limit — use **5–15s** audio for tests; see backend error message on 524.
 
 ### 4.4. Result and history
 
 - Video in **Result**.
-- Entry in **History** on the gateway (replay or delete).
+- Entry in **History** on the backend (replay or delete).
 
 ---
 
@@ -435,7 +405,7 @@ New Pod → new URL → update UI → **Test connection**.
 
 | Action | Where |
 |--------|--------|
-| Stop local UI/gateway | `make down` |
+| Stop local UI/backend | `make down` |
 | Stop Pod | RunPod → **Stop** |
 | Delete Pod | RunPod → **Terminate** |
 
@@ -445,10 +415,10 @@ New Pod → new URL → update UI → **Test connection**.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| 404 + Jupyter HTML | Port 8888 or wrong template | `mouthsync-worker`, HTTP **8000** |
+| 404 + Jupyter HTML | Port 8888 or wrong template | `mouthsync-worker-sadtalker` / `wav2lip`, HTTP **8000** |
 | Cannot reach worker | Pod down / bad URL | Pod **Running**, `curl .../health` |
 | 401 | Key mismatch | Same `WORKER_API_KEY` on Pod and UI |
-| 524 / timeout | RunPod proxy ~100s | Shorter audio; lite worker; other hosting |
+| 524 / timeout | RunPod proxy ~100s | Shorter audio; other hosting |
 | `worker_configured: false` | Empty URL | Fill WORKER_URL |
 | Pull failed | Private image | Public repo or RunPod credentials |
 | SadTalker 500 in logs | Bad audio | Valid WAV/MP3; check Pod logs |
@@ -460,9 +430,7 @@ New Pod → new URL → update UI → **Test connection**.
 ```bash
 export DOCKER_USER=username
 make hub-login
-make worker-publish
-make worker-sadtalker-publish
-make worker-wav2lip-publish
+make worker-publish-ready
 
 make env
 make up-detached
@@ -480,6 +448,6 @@ curl http://127.0.0.1:8000/api/worker-status -H "X-Worker-Url: https://<pod>-800
 | Service | Where | Port |
 |---------|-------|------|
 | UI | your machine | 3000 |
-| Gateway | Docker on Mac | 8000 |
+| Backend | Docker on Mac | 8000 |
 | MouthSync worker | RunPod | 8000 → `...-8000.proxy.runpod.net` |
 | ~~Jupyter~~ | foreign templates | ~~8888~~ — **wrong** |

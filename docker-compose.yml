@@ -1,17 +1,9 @@
-# MouthSync: UI :3000 → gateway :8000 → WORKER_URL (RunPod or local worker).
-# Set WORKER_URL in .env. Local worker: WORKER_URL=http://worker:8000 and
-#   docker compose --profile local-worker up --build
-# Vite proxies /api to the gateway service.
+# MouthSync: UI :3000 → backend :8000 → WORKER_URL (RunPod SadTalker + Wav2Lip Pods).
+# Local stack: docker compose up --build  (backend + UI + MongoDB only)
+# Optional SadTalker GPU: docker compose --profile sadtalker-worker up worker-sadtalker
+# Vite proxies /api to the backend service.
 
 services:
-  worker:
-    profiles: ["local-worker"]
-    build: ./runpod-worker
-    ports:
-      - "9000:8000"
-    environment:
-      WORKER_API_KEY: ${WORKER_API_KEY:-}
-
   # SadTalker (GPU): docker compose --profile sadtalker-worker up worker-sadtalker
   worker-sadtalker:
     profiles: ["sadtalker-worker"]
@@ -43,12 +35,12 @@ services:
       retries: 8
       start_period: 10s
 
-  gateway:
-    build: ./gateway
+  backend:
+    build: ./backend
     ports:
       - "8000:8000"
     volumes:
-      - ./gateway/data:/app/data
+      - ./backend/data:/app/data
     depends_on:
       mongo:
         condition: service_healthy
@@ -88,9 +80,9 @@ services:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
     environment:
-      PROXY_API_TARGET: http://gateway:8000
+      PROXY_API_TARGET: http://backend:8000
     depends_on:
-      - gateway
+      - backend
 
 volumes:
   frontend_node_modules:

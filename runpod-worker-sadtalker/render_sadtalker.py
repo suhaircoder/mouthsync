@@ -1,4 +1,4 @@
-"""SadTalker inference wrapper — same entrypoint as lightweight runpod-worker."""
+"""SadTalker inference wrapper — photo + audio → MP4."""
 
 from __future__ import annotations
 

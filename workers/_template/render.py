@@ -27,7 +27,7 @@ def preload_models() -> None:
 
 
 def animate_face(image_path: str, audio_path: str, output_video_path: str) -> None:
-    """photo + audio → MP4. Same contract as runpod-worker and SadTalker."""
+    """photo + audio → MP4. Same contract as SadTalker workers."""
     raise NotImplementedError(
         f"{BACKEND_ID}: implement inference in render.py (upstream: {UPSTREAM_REPO})"
     )

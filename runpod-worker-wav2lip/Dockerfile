@@ -9,7 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     WAV2LIP_ROOT=/app/Wav2Lip \
     WAV2LIP_CHECKPOINT=/app/Wav2Lip/checkpoints/wav2lip_gan.pth \
     WAV2LIP_PRELOAD=1 \
-    PYTHONPATH=/app/Wav2Lip
+    PYTHONPATH=/app/Wav2Lip \
+    PATH="/usr/bin:/bin:/usr/local/bin:/opt/conda/bin"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
@@ -26,7 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app/Wav2Lip
 
 RUN git clone --depth 1 https://github.com/Rudrabha/Wav2Lip.git . \
-    && sed -i 's/cv2\.cv2\.ROTATE_90_CLOCKWISE/cv2.ROTATE_90_CLOCKWISE/g' inference.py
+    && sed -i 's/cv2\.cv2\.ROTATE_90_CLOCKWISE/cv2.ROTATE_90_CLOCKWISE/g' inference.py \
+    && sed -i 's/librosa\.filters\.mel(hp\.sample_rate, hp\.n_fft,/librosa.filters.mel(sr=hp.sample_rate, n_fft=hp.n_fft,/g' audio.py \
+    && sed -i 's/librosa\.core\.load/librosa.load/g' audio.py
 
 # upstream requirements.txt: numpy==1.17 does not build on Py3.10 (setuptools/distutils).
 COPY requirements-docker.txt /tmp/requirements-docker.txt

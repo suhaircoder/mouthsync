@@ -19,6 +19,7 @@ import {
   photoOptionsFromServer,
   savePhotoOptions,
 } from "./photoConfig.js";
+import { useToast } from "./ToastProvider.jsx";
 import {
   buildWorkerHeaders,
   hasWav2lipConfig,
@@ -205,10 +206,7 @@ export default function App() {
   const [envWav2lipConfigured, setEnvWav2lipConfigured] = useState(false);
   const [testingWorker, setTestingWorker] = useState(false);
   const [testingWav2lip, setTestingWav2lip] = useState(false);
-  const [status, setStatus] = useState({
-    tone: "neutral",
-    text: "Укажите адрес сервера генерации в настройках ниже.",
-  });
+  const toast = useToast();
   const [stage1Url, setStage1Url] = useState(null);
   const [refinedUrl, setRefinedUrl] = useState(null);
   const [refining, setRefining] = useState(false);
@@ -337,12 +335,11 @@ export default function App() {
           if (fromServer) setAudioOptions(fromServer);
         }
         if (saved.workerUrl || envOk) {
-          setStatus({
-            tone: "neutral",
-            text: saved.workerUrl
+          toast.info(
+            saved.workerUrl
               ? "Адрес сервера взят из сохранённых настроек."
               : "Используется адрес сервера из конфигурации приложения.",
-          });
+          );
         }
       })
       .catch(() => {});
@@ -352,10 +349,7 @@ export default function App() {
       const hadLocal = hasLocalWorkerUrls(saved);
       applyRemote(remote);
       if (!hadLocal && hasLocalWorkerUrls(loadWorkerConfig())) {
-        setStatus({
-          tone: "neutral",
-          text: "Адреса серверов подставлены из сохранённых настроек.",
-        });
+        toast.info("Адреса серверов подставлены из сохранённых настроек.");
       }
     });
 
@@ -388,12 +382,11 @@ export default function App() {
     } else {
       setRefinedUrl(null);
     }
-    setStatus({
-      tone: "neutral",
-      text: `Из истории: ${item.photo_name} + ${item.audio_name}${
+    toast.info(
+      `Из истории: ${item.photo_name} + ${item.audio_name}${
         item.refined ? " (оба этапа)" : ""
       }`,
-    });
+    );
   };
 
   const onDeleteHistory = async (id) => {
@@ -408,12 +401,9 @@ export default function App() {
         setActiveHistoryId(null);
       }
       await loadHistory();
-      setStatus({ tone: "ok", text: "Запись удалена из истории." });
+      toast.success("Запись удалена из истории.");
     } catch (err) {
-      setStatus({
-        tone: "err",
-        text: err?.message || String(err),
-      });
+      toast.error(err?.message || String(err));
     }
   };
 
@@ -423,7 +413,7 @@ export default function App() {
 
   const openPhotoModal = () => {
     if (!photo) {
-      setStatus({ tone: "warn", text: "Сначала загрузите портрет." });
+      toast.warn("Сначала загрузите портрет.");
       return;
     }
     photoSnapshotRef.current = { ...photoOptions };
@@ -444,10 +434,7 @@ export default function App() {
     await pushConfigToServer(workerConfig, saved, audioOptions);
     photoSnapshotRef.current = null;
     setPhotoModalOpen(false);
-    setStatus({
-      tone: "ok",
-      text: "Настройки фото сохранены.",
-    });
+    toast.success("Настройки фото сохранены.");
   };
 
   const onResetPhotoSettings = () => {
@@ -460,7 +447,7 @@ export default function App() {
 
   const openAudioModal = () => {
     if (!audio) {
-      setStatus({ tone: "warn", text: "Сначала загрузите аудио." });
+      toast.warn("Сначала загрузите аудио.");
       return;
     }
     audioSnapshotRef.current = { ...audioOptions };
@@ -481,10 +468,7 @@ export default function App() {
     await pushConfigToServer(workerConfig, photoOptions, saved);
     audioSnapshotRef.current = null;
     setAudioModalOpen(false);
-    setStatus({
-      tone: "ok",
-      text: "Настройки аудио сохранены.",
-    });
+    toast.success("Настройки аудио сохранены.");
   };
 
   const onResetAudioSettings = () => {
@@ -518,10 +502,7 @@ export default function App() {
     setWav2lipWorkerUrl(saved.wav2lipWorkerUrl);
     setWav2lipWorkerApiKey(saved.wav2lipWorkerApiKey);
     await pushConfigToServer(saved, photoOptions, audioOptions);
-    setStatus({
-      tone: "ok",
-      text: "Настройки серверов сохранены.",
-    });
+    toast.success("Настройки серверов сохранены.");
   };
 
   const onTestWorker = async () => {
@@ -533,21 +514,12 @@ export default function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (data.ok) {
-        setStatus({
-          tone: "ok",
-          text: "Связь с основным сервером установлена.",
-        });
+        toast.success("Связь с основным сервером установлена.");
       } else {
-        setStatus({
-          tone: "err",
-          text: data.detail || `Проверка не прошла (${res.status})`,
-        });
+        toast.error(data.detail || `Проверка не прошла (${res.status})`);
       }
     } catch (err) {
-      setStatus({
-        tone: "err",
-        text: err?.message || String(err),
-      });
+      toast.error(err?.message || String(err));
     } finally {
       setTestingWorker(false);
     }
@@ -564,44 +536,23 @@ export default function App() {
       if (data.ok) {
         const backend = data.worker?.backend;
         if (backend === "sadtalker") {
-          setStatus({
-            tone: "err",
-            text:
-              "Это сервер этапа 1 (SadTalker). Для этапа 2 укажите отдельный Pod с образом mouthsync-worker-wav2lip.",
-          });
+          toast.error(
+            "Это адрес этапа 1. Для этапа 2 укажите отдельный сервер улучшения губ.",
+          );
         } else if (backend && backend !== "wav2lip") {
-          setStatus({
-            tone: "err",
-            text: `Этот сервер не подходит для этапа 2 (тип: ${backend}).`,
-          });
+          toast.error(`Этот сервер не подходит для этапа 2 (тип: ${backend}).`);
         } else if (backend === "wav2lip" && data.worker?.ready === false) {
-          setStatus({
-            tone: "warn",
-            text: "Сервер Wav2Lip доступен, но модели ещё загружаются. Подождите минуту.",
-          });
+          toast.warn("Сервер Wav2Lip доступен, но модели ещё загружаются. Подождите минуту.");
         } else if (!backend) {
-          setStatus({
-            tone: "err",
-            text:
-              "У этого сервера нет Wav2Lip. Для этапа 2 нужен образ mouthsync-worker-wav2lip.",
-          });
+          toast.error("Этот сервер не поддерживает этап 2. Нужен отдельный Wav2Lip-сервер.");
         } else {
-          setStatus({
-            tone: "ok",
-            text: "Сервер для этапа 2 (Wav2Lip) готов.",
-          });
+          toast.success("Сервер для этапа 2 готов.");
         }
       } else {
-        setStatus({
-          tone: "err",
-          text: data.detail || "Не удалось проверить сервер улучшения губ.",
-        });
+        toast.error(data.detail || "Не удалось проверить сервер улучшения губ.");
       }
     } catch (err) {
-      setStatus({
-        tone: "err",
-        text: err?.message || String(err),
-      });
+      toast.error(err?.message || String(err));
     } finally {
       setTestingWav2lip(false);
     }
@@ -610,10 +561,7 @@ export default function App() {
   const onRefine = async () => {
     if (!activeHistoryId) return;
     if (!hasWav2lipConfig(workerConfig, envWav2lipConfigured)) {
-      setStatus({
-        tone: "warn",
-        text: "Укажите адрес сервера для второго этапа в настройках.",
-      });
+      toast.warn("Укажите адрес сервера для второго этапа в настройках.");
       setSettingsOpen(true);
       return;
     }
@@ -622,10 +570,7 @@ export default function App() {
     await pushConfigToServer(saved, photoOptions, audioOptions);
 
     setRefining(true);
-    setStatus({
-      tone: "neutral",
-      text: "Второй этап: улучшение губ… это может занять несколько минут.",
-    });
+    toast.progress("Второй этап: улучшение губ… это может занять несколько минут.");
 
     try {
       const res = await fetch(`${API_HISTORY}/${activeHistoryId}/refine`, {
@@ -641,44 +586,30 @@ export default function App() {
       trackBlob("refined", url);
       setRefinedUrl(url);
       await loadHistory();
-      setStatus({
-        tone: "ok",
-        text: "Второй этап готов. Сравните оба варианта ниже.",
-      });
+      toast.success("Второй этап готов. Сравните оба варианта ниже.");
     } catch (err) {
-      setStatus({
-        tone: "err",
-        text: err?.message || String(err),
-      });
+      toast.error(err?.message || String(err));
     } finally {
       setRefining(false);
+      toast.clearProgress();
     }
   };
 
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!photo || !audio) {
-      setStatus({
-        tone: "warn",
-        text: "Нужны оба файла: изображение лица и аудио.",
-      });
+      toast.warn("Нужны оба файла: изображение лица и аудио.");
       return;
     }
 
     if (!hasWorkerConfig(workerConfig, envWorkerConfigured)) {
-      setStatus({
-        tone: "warn",
-        text: "Сначала укажите адрес сервера генерации в настройках.",
-      });
+      toast.warn("Сначала укажите адрес сервера генерации в настройках.");
       setSettingsOpen(true);
       return;
     }
 
     setLoading(true);
-    setStatus({
-      tone: "neutral",
-      text: "Первый этап: создание видео… это может занять минуту или больше.",
-    });
+    toast.progress("Первый этап: создание видео… это может занять минуту или больше.");
 
     const form = new FormData();
     form.append("photo", photo);
@@ -709,31 +640,19 @@ export default function App() {
       setRefinedUrl(null);
       setActiveHistoryId(historyId);
       await loadHistory();
-      setStatus({
-        tone: "ok",
-        text: historyId
+      toast.success(
+        historyId
           ? "Первый этап готов. Просмотрите результат и при необходимости запустите улучшение губ."
           : "Первый этап готов. Ниже превью — при необходимости запустите улучшение губ.",
-      });
+      );
     } catch (err) {
       clearResults();
-      setStatus({
-        tone: "err",
-        text: err?.message || String(err),
-      });
+      toast.error(err?.message || String(err));
     } finally {
       setLoading(false);
+      toast.clearProgress();
     }
   };
-
-  const statusClass =
-    status.tone === "ok"
-      ? "banner banner--ok"
-      : status.tone === "warn"
-        ? "banner banner--warn"
-        : status.tone === "err"
-          ? "banner banner--err"
-          : "banner";
 
   return (
     <div className="shell">
@@ -987,10 +906,6 @@ export default function App() {
               <p className="form__pipeline-hint">{refineHint}</p>
             ) : null}
           </form>
-
-          <p className={statusClass} role="status" aria-live="polite">
-            {status.text}
-          </p>
         </section>
 
         <section className="panel panel--output">

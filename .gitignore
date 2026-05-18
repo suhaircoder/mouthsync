@@ -1,7 +1,7 @@
 .env
-gateway/data/history/*
-!gateway/data/.gitkeep
-!gateway/data/history/.gitkeep
+backend/data/history/*
+!backend/data/.gitkeep
+!backend/data/history/.gitkeep
 
 # Python
 __pycache__/

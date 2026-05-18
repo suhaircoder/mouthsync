@@ -335,7 +335,7 @@ def _load_segment(audio_bytes: bytes, filename: str = "") -> AudioSegment:
     if not ffmpeg_available():
         raise AudioPrepError(
             "invalid_audio",
-            "ffmpeg недоступен в контейнере gateway. Пересоберите образ: docker compose build gateway",
+            "ffmpeg недоступен в контейнере backend. Пересоберите образ: docker compose build backend",
         )
 
     fmt = _format_from_filename(filename) or _sniff_format(audio_bytes)

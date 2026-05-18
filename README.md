@@ -1,6 +1,6 @@
 # MouthSync
 
-**Lip-sync** from a portrait and audio → short video. Local **gateway** (`gateway/`, FastAPI) and **UI** (`frontend/`, React + Vite); heavy rendering runs on a **remote worker**. Configure via `.env` at the repo root (template: `.env.example`).
+**Lip-sync** from a portrait and audio → short video. Local **backend** (`backend/`, FastAPI) and **UI** (`frontend/`, React + Vite); heavy rendering runs on a **remote worker**. Configure via `.env` at the repo root (template: `.env.example`).
 
 **Worker registry (Wav2Lip, MuseTalk, SadTalker, …):** [workers/README.md](./workers/README.md)
 
@@ -8,15 +8,136 @@
 
 ---
 
+## Prerequisites
+
+Install these **before** running MouthSync locally. The recommended path uses **Docker** so you do not need Python or Node on the host.
+
+| Tool | Required for | Install / docs |
+|------|----------------|----------------|
+| **[Git](https://git-scm.com/downloads)** | Clone the repo | [git-scm.com/downloads](https://git-scm.com/downloads) |
+| **[Docker](https://docs.docker.com/get-docker/)** | Backend, UI, MongoDB | [Docker Desktop](https://docs.docker.com/desktop/) (macOS/Windows) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux) |
+| **[Docker Compose](https://docs.docker.com/compose/)** | Orchestrate services (`docker compose`) | Included with Docker Desktop; on Linux, see [Compose install](https://docs.docker.com/compose/install/) |
+| **[GNU Make](https://www.gnu.org/software/make/)** | Shortcuts (`make local-detached`, `make env`, …) | macOS: Xcode Command Line Tools (`xcode-select --install`); Linux: `apt install make` / `dnf install make`; Windows: [Make for Windows](https://gnuwin32.sourceforge.net/packages/make.htm) or use WSL |
+| **[curl](https://curl.se/download.html)** *(optional)* | Health checks on backend/worker | Usually preinstalled on macOS/Linux |
+
+**For publishing worker images to RunPod** (optional until you deploy a remote worker):
+
+| Tool | Purpose | Link |
+|------|---------|------|
+| **[Docker Hub](https://hub.docker.com/)** account | Push images (`make worker-*-publish`) | [hub.docker.com](https://hub.docker.com/) |
+| **[RunPod](https://www.runpod.io)** account | GPU/CPU Pods for inference | [runpod.io](https://www.runpod.io) |
+
+**For local SadTalker / Wav2Lip workers** (GPU profiles only):
+
+| Tool | Purpose | Link |
+|------|---------|------|
+| **NVIDIA GPU** + driver | Neural rendering | [NVIDIA drivers](https://www.nvidia.com/Download/index.aspx) |
+| **[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)** | GPU inside Docker | [Install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) |
+
+**Optional — run backend or frontend on the host** (without Docker for that service):
+
+| Tool | Version | Link |
+|------|---------|------|
+| **[Python](https://www.python.org/downloads/)** | 3.10+ (backend uses 3.10 in Docker) | [python.org](https://www.python.org/downloads/) |
+| **[Node.js](https://nodejs.org/)** | 20 LTS (frontend uses Node 20 in Docker) | [nodejs.org](https://nodejs.org/) |
+
+Verify Docker and Compose:
+
+```bash
+docker --version
+docker compose version
+make --version
+```
+
+---
+
+## Quick start — run locally
+
+All commands below are run from the **`mouthsync/`** directory (next to `docker-compose.yml` and `Makefile`).
+
+### 1. Clone and configure
+
+```bash
+git clone https://github.com/suhaircoder/mouthsync.git
+cd mouthsync
+make env
+```
+
+Edit **`.env`** (created from [`.env.example`](./.env.example)). For a first run you can leave `WORKER_URL` empty and set the worker URL later in the UI.
+
+### 2. Choose how to run
+
+#### Option A — Backend + UI only (workers on RunPod)
+
+Use this when inference runs on a remote Pod. Set **WORKER_URL** in the UI at [http://localhost:3000](http://localhost:3000) or in `.env`.
+
+```bash
+make up-detached    # or: make up-build
+make ps             # check containers
+```
+
+| Service | URL |
+|---------|-----|
+| UI | [http://localhost:3000](http://localhost:3000) |
+| Backend API | [http://localhost:8000](http://localhost:8000) |
+| MongoDB | `localhost:27017` (used by backend for history/settings) |
+
+Stop: `make down`
+
+#### Option B — Local UI + backend (workers on RunPod)
+
+Runs **frontend + backend + MongoDB** in Docker. Set **WORKER_URL** and **Wav2Lip URL** in the UI (RunPod Pods).
+
+```bash
+make local-detached   # recommended: background
+make local-ps
+make local-logs       # optional: follow logs
+```
+
+| Service | URL |
+|---------|-----|
+| UI | [http://localhost:3000](http://localhost:3000) |
+| Backend | [http://localhost:8000](http://localhost:8000) |
+
+Stop: `make local-down`
+
+#### Option C — SadTalker worker locally (NVIDIA GPU)
+
+Requires [NVIDIA Container Toolkit](#prerequisites). UI/backend can stay on the default compose stack; start SadTalker with the `sadtalker-worker` profile:
+
+```bash
+docker compose --profile sadtalker-worker up --build worker-sadtalker
+```
+
+SadTalker on the host: [http://127.0.0.1:9001](http://127.0.0.1:9001). Point **WORKER_URL** in the UI to that URL (or use a RunPod SadTalker URL instead).
+
+### 3. Smoke test
+
+```bash
+curl -sS http://localhost:8000/health
+```
+
+Open the UI → upload portrait + audio → generate. If using RunPod, paste the Pod URL under **Worker (RunPod)** and click **Save**, then **Test connection**.
+
+### 4. Remote worker (RunPod) — summary
+
+1. Build and push: `make worker-sadtalker-publish` and `make worker-wav2lip-publish`.
+2. Create **two** Pods on [RunPod](https://www.runpod.io) (SadTalker + Wav2Lip), **HTTP port 8000** each.
+3. In the UI: **WORKER_URL** (stage 1) and **Wav2Lip URL** (stage 2) — `https://<POD_ID>-8000.proxy.runpod.net` (no trailing slash).
+
+Details: sections below and [RUNPOD.md](./RUNPOD.md).
+
+---
+
 ## Generation history
 
-After each successful generation the gateway stores:
+After each successful generation the backend stores:
 
 - video `output.mp4`
 - source photo and audio
 - metadata (filenames, timestamp)
 
-Files live under **`gateway/data/history/`** (Docker volume: `./gateway/data`).
+Files live under **`backend/data/history/`** (Docker volume: `./backend/data`).
 
 In the UI, the **History** panel lets you replay and delete entries.
 
@@ -34,10 +155,10 @@ At **http://localhost:3000**, section **Worker (RunPod)**:
 
 - **WORKER_URL** and **WORKER_API_KEY** are stored in this browser’s **localStorage**.
 - After each **new RunPod Pod**, paste the new URL and click **Save** — editing `.env` is optional.
-- **Test connection** calls `GET /api/worker-status` on the gateway (same URL used for generation).
-- If the URL field is **empty**, the gateway falls back to **`WORKER_URL` from `.env`** (handy for default docker compose).
+- **Test connection** calls `GET /api/worker-status` on the backend (same URL used for generation).
+- If the URL field is **empty**, the backend falls back to **`WORKER_URL` from `.env`** (handy for default docker compose).
 
-Priority: **UI values** → **gateway `.env`**.
+Priority: **UI values** → **backend `.env`**.
 
 ---
 
@@ -45,59 +166,16 @@ Priority: **UI values** → **gateway `.env`**.
 
 | Variable | Purpose |
 |----------|---------|
-| **`WORKER_URL`** | Public URL of **your** service on the RunPod Pod **without** the `/infer` path (no trailing slash). The gateway appends `/infer` automatically. Example: `https://<pod-id>-8000.proxy.runpod.net` |
-| **`WORKER_API_KEY`** | This is **not** your RunPod account API key. It is a **secret you choose** in the worker’s Pod env vars and the same value in local `.env` — the gateway sends it as header `X-Worker-Key`. Leave empty in `.env` if the worker has no key. |
+| **`WORKER_URL`** | Public URL of **your** service on the RunPod Pod **without** the `/infer` path (no trailing slash). The backend appends `/infer` automatically. Example: `https://<pod-id>-8000.proxy.runpod.net` |
+| **`WORKER_API_KEY`** | This is **not** your RunPod account API key. It is a **secret you choose** in the worker’s Pod env vars and the same value in local `.env` — the backend sends it as header `X-Worker-Key`. Leave empty in `.env` if the worker has no key. |
 
 The RunPod dashboard API key (REST/CLI) is **not** required for this worker.
 
 ---
 
-## 1. Build and publish the lite worker image
+## 1. SadTalker worker (stage 1, GPU)
 
-Build context: **`runpod-worker/`**.
-
-### Via Makefile (recommended)
-
-```bash
-cd mouthsync
-export DOCKER_USER=<your_docker_hub_username>
-make hub-login          # once: Docker Hub login/token
-make worker-publish     # build linux/amd64 + push
-```
-
-Image: `docker.io/<DOCKER_USER>/mouthsync-worker:latest`
-
-Local smoke test before push:
-
-```bash
-make worker-build-hub
-docker run --rm -p 8000:8000 docker.io/$DOCKER_USER/mouthsync-worker:latest
-curl http://127.0.0.1:8000/health
-```
-
-### Manual (equivalent)
-
-```bash
-docker build --platform linux/amd64 \
-  -t docker.io/<DOCKER_USER>/mouthsync-worker:latest ./runpod-worker
-docker login
-docker push docker.io/<DOCKER_USER>/mouthsync-worker:latest
-```
-
-On Apple Silicon Macs, **`--platform linux/amd64`** matters — RunPod Pods are usually amd64.
-
----
-
-## 1b. SadTalker worker (GPU, neural)
-
-Second worker with the **same API** (`/health`, `/infer`), rendering via [SadTalker](https://github.com/OpenTalker/SadTalker). Directory: **`runpod-worker-sadtalker/`**.
-
-| | `runpod-worker` (lite) | `runpod-worker-sadtalker` |
-|---|------------------------|---------------------------|
-| Quality | MVP, mouth ROI shift | More realistic, neural |
-| Hardware | CPU | **NVIDIA GPU** |
-| Image size | ~hundreds of MB | several GB (models baked in) |
-| RunPod | CPU Pod OK | **GPU Pod required** |
+Talking head via [SadTalker](https://github.com/OpenTalker/SadTalker). Directory: **`runpod-worker-sadtalker/`**. API: `GET /health`, `POST /infer`.
 
 ### Build and push
 
@@ -117,8 +195,6 @@ Image: `docker.io/<DOCKER_USER>/mouthsync-worker-sadtalker:latest`
 
 ### RunPod
 
-Same as lite, but:
-
 - **Container image:** `docker.io/<DOCKER_USER>/mouthsync-worker-sadtalker:latest`
 - **GPU:** RTX 3090 / 4090 or similar
 - **Expose HTTP ports:** `8000`
@@ -126,13 +202,11 @@ Same as lite, but:
 
 Set **WORKER_URL** in the MouthSync UI to the SadTalker Pod URL (`https://<id>-8000.proxy.runpod.net`).
 
-Switch workers by changing **WORKER_URL** only (lite CPU vs SadTalker GPU). UI and gateway stay the same.
-
 ---
 
-## 1c. Wav2Lip worker (GPU, lighter neural lip-sync)
+## 2. Wav2Lip worker (stage 2, GPU lip refine)
 
-Directory: **`runpod-worker-wav2lip/`**. Same HTTP API; rendering via [Wav2Lip](https://github.com/Rudrabha/Wav2Lip).
+Directory: **`runpod-worker-wav2lip/`**. API: `GET /health`, `POST /refine` (video + audio). Rendering via [Wav2Lip](https://github.com/Rudrabha/Wav2Lip).
 
 ```bash
 export DOCKER_USER=<username>
@@ -141,15 +215,15 @@ make worker-wav2lip-publish
 
 Image: `docker.io/<DOCKER_USER>/mouthsync-worker-wav2lip:latest`
 
-Typically faster and lighter than SadTalker; lip-sync quality between lite and SadTalker. **GPU Pod** recommended, port **8000**, disk **≥ 15 GB**.
+**GPU Pod** recommended (RTX 3090/4090), port **8000**, disk **≥ 15 GB**. Set **Wav2Lip URL** in the UI to this Pod.
 
 ---
 
-## 2. Create a RunPod Pod
+## 3. Create RunPod Pods
 
 1. Sign in at [runpod.io](https://www.runpod.io) → **Pods**.
 2. **Deploy** a new Pod.
-3. **Container image:** `docker.io/<DOCKER_USER>/mouthsync-worker:latest` (or `-sadtalker` / `-wav2lip`).
+3. **Container image:** `mouthsync-worker-sadtalker:latest` and `mouthsync-worker-wav2lip:latest`.
 4. **Expose HTTP ports:** **`8000`** — uvicorn listens on 8000 inside the container. Without this, no public proxy URL.  
    Docs: [Expose ports](https://docs.runpod.io/pods/configuration/expose-ports).
 5. (Optional) **Environment:** `WORKER_API_KEY` = long random string; same in local `.env`.
@@ -187,51 +261,21 @@ curl -sS -H "X-Worker-Key: <YOUR_SECRET>" "https://<POD_ID>-8000.proxy.runpod.ne
 
 ## 4. Run locally
 
-```bash
-cd mouthsync
-make env
-# Edit .env: WORKER_URL (RunPod) or http://worker:8000 for local worker
-make local-detached
-make local-ps
-```
+See **[Quick start — run locally](#quick-start--run-locally)** for prerequisites, `make env`, Option A/B/C, and smoke tests.
 
-Gateway + UI only (worker on RunPod): `make up-detached` and set URL in UI or `.env`.
-
-- UI: [http://localhost:3000](http://localhost:3000)  
-- Gateway API: [http://localhost:8000](http://localhost:8000)  
-
-Vite proxies `/api` to the **`gateway`** service; the gateway calls RunPod via `WORKER_URL`.
+Vite proxies `/api` from the UI to the **`backend`** service; the backend calls the worker at **`WORKER_URL`** (UI → `.env` → default).
 
 ---
 
 ## 5. RunPod HTTP proxy limit
 
-The public HTTP proxy has a **~100 second** connection limit (Cloudflare **524** on long jobs). SadTalker/Wav2Lip on long audio may hit this. Use shorter clips for tests, lite worker for quick tries, or async hosting later.
+The public HTTP proxy has a **~100 second** connection limit (Cloudflare **524** on long jobs). SadTalker/Wav2Lip on long audio may hit this. Use shorter clips for tests or async hosting later.
 
 ---
 
-## 6. Local worker in Docker (no RunPod)
+## 6. Local stack in Docker
 
-For debugging without RunPod, use profile `local-worker` and in `.env`:
-
-```env
-WORKER_URL=http://worker:8000
-```
-
-```bash
-make local-up          # logs in terminal
-# or
-make local-detached
-```
-
-Worker on host: **http://localhost:9000**. Stop: `make local-down`.
-
-SadTalker locally (NVIDIA):
-
-```bash
-docker compose --profile sadtalker-worker up --build worker-sadtalker
-# UI: http://127.0.0.1:9001
-```
+**[Option B](#option-b--local-ui--backend-workers-on-runpod)** (UI + backend) and **[Option C](#option-c--sadtalker-worker-locally-nvidia-gpu)** (local SadTalker GPU). `make local-up` / `make local-down`.
 
 ---
 
@@ -243,21 +287,21 @@ From **`mouthsync/`**:
 |---------|--------|
 | `make help` | list targets |
 | `make env` | create `.env` from `.env.example` if missing |
-| `make up-detached` | gateway + UI (RunPod worker via UI/env) |
-| `make down` | stop (without local-worker profile) |
-| `make local-detached` | **recommended**: UI + gateway + lite worker |
-| `make local-down` | stop full local stack |
+| `make up-detached` | backend + UI (RunPod worker via UI/env) |
+| `make down` | stop backend + UI |
+| `make local-detached` | **recommended**: UI + backend (RunPod workers in UI) |
+| `make local-down` | stop local stack |
 | `make local-ps` / `make local-logs` | status / logs |
 | `make hub-login` | Docker Hub login |
-| `make worker-list` | all workers and status |
-| `make worker-publish` | build + push lite worker |
+| `make worker-list` | workers (sadtalker, wav2lip) |
+| `make worker-publish` | alias → SadTalker image |
 | `make worker-sadtalker-publish` | SadTalker image |
 | `make worker-wav2lip-publish` | Wav2Lip image |
-| `make worker-publish-ready` | push all production-ready workers |
+| `make worker-publish-ready` | push both workers |
 
 ---
 
 ## Environment files
 
 - Project root: **`.env`** (do not commit; see **`.gitignore`** and **`.env.example`**).
-- Also: `gateway/.env.example` — reminder about root `.env`.
+- Also: `backend/.env.example` — reminder about root `.env`.

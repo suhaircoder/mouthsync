@@ -1,25 +1,18 @@
 # MouthSync worker registry — shared API contract for all backends.
 # API: GET /health  |  POST /infer (multipart: photo, audio) → video/mp4
+# Wav2Lip also: POST /refine (video + audio) → video/mp4
 #
 # Build:  make worker-<id>-publish   (requires export DOCKER_USER=...)
 # List:   make worker-list
 
 workers:
-  - id: lite
-    title: MouthSync Lite (OpenCV + MediaPipe)
-    dir: runpod-worker
-    image: mouthsync-worker
-    ready: true
-    gpu: false
-    use_case: Fast MVP without neural net, CPU
-
   - id: sadtalker
     title: SadTalker
     dir: runpod-worker-sadtalker
     image: mouthsync-worker-sadtalker
     ready: true
     gpu: true
-    use_case: Quality talking head, offline render
+    use_case: Stage 1 — talking head, offline render
     upstream: https://github.com/OpenTalker/SadTalker
 
   - id: wav2lip
@@ -28,41 +21,5 @@ workers:
     image: mouthsync-worker-wav2lip
     ready: true
     gpu: true
-    use_case: Lightweight neural lip-sync
+    use_case: Stage 2 — lip-sync refine on existing video
     upstream: https://github.com/Rudrabha/Wav2Lip
-
-  - id: musetalk
-    title: MuseTalk
-    dir: runpod-worker-musetalk
-    image: mouthsync-worker-musetalk
-    ready: false
-    gpu: true
-    use_case: Best quality for realtime
-    upstream: https://github.com/TMElyralab/MuseTalk
-
-  - id: liveportrait
-    title: LivePortrait
-    dir: runpod-worker-liveportrait
-    image: mouthsync-worker-liveportrait
-    ready: false
-    gpu: true
-    use_case: Most natural facial expression
-    upstream: https://github.com/KwaiVGI/LivePortrait
-
-  - id: ultralight
-    title: Ultralight Digital Human
-    dir: runpod-worker-ultralight
-    image: mouthsync-worker-ultralight
-    ready: false
-    gpu: false
-    use_case: CPU / weak GPU
-    upstream: https://github.com/anliyuan/Ultralight-Digital-Human
-
-  - id: livetalking
-    title: LiveTalking
-    dir: runpod-worker-livetalking
-    image: mouthsync-worker-livetalking
-    ready: false
-    gpu: true
-    use_case: Ready-made realtime stack
-    upstream: https://github.com/lipku/LiveTalking

@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
     close_client()
 
 
-app = FastAPI(title="MouthSync gateway", lifespan=lifespan)
+app = FastAPI(title="MouthSync backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -138,7 +138,7 @@ async def _assert_wav2lip_refine_worker(
     wav2lip_url: str,
     wav2lip_key: str,
 ) -> None:
-    """Refine requires mouthsync-worker-wav2lip (/refine). SadTalker/lite only have /infer."""
+    """Refine requires mouthsync-worker-wav2lip (/refine). SadTalker only has /infer."""
     status, data, body = await _fetch_worker_health(client, wav2lip_url, wav2lip_key)
     if status != 200:
         detail = _diagnose_worker_response(
@@ -152,27 +152,27 @@ async def _assert_wav2lip_refine_worker(
         raise HTTPException(
             status_code=400,
             detail=(
-                "В поле «Сервер улучшения губ» указан SadTalker (этап 1). "
-                "Для этапа 2 нужен отдельный Pod с образом mouthsync-worker-wav2lip."
+                "В поле «Сервер улучшения губ» указан адрес этапа 1. "
+                "Для этапа 2 нужен отдельный сервер улучшения губ."
             ),
         )
     if backend and backend != "wav2lip":
         raise HTTPException(
             status_code=400,
-            detail=f"Сервер этапа 2 не поддерживает улучшение губ (тип: {backend}).",
+            detail="Этот адрес не подходит для этапа 2 — нужен сервер улучшения губ.",
         )
     if not backend:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Этот сервер не подходит для этапа 2: нет Wav2Lip (/refine). "
-                "Поднимите отдельный Pod с образом mouthsync-worker-wav2lip."
+                "Этот адрес не поддерживает этап 2. "
+                "Укажите URL отдельного сервера улучшения губ (образ Wav2Lip в настройках облака)."
             ),
         )
     if data and not data.get("ready", True):
         raise HTTPException(
             status_code=503,
-            detail="Wav2Lip ещё загружает модели на Pod. Подождите и повторите.",
+            detail="Сервер улучшения губ ещё загружает модели. Подождите и повторите.",
         )
 
     await _ensure_wav2lip_refine_endpoint(client, wav2lip_url, wav2lip_key)
@@ -208,8 +208,8 @@ async def _ensure_wav2lip_refine_endpoint(
     raise HTTPException(
         status_code=400,
         detail=(
-            f"На Pod ({base}) нет эндпоинта /refine — установлен устаревший образ Wav2Lip. "
-            "Пересоберите mouthsync-worker-wav2lip, задеплойте новый Pod и обновите URL в настройках."
+            "На этом сервере нет функции улучшения губ — нужна более новая версия. "
+            "Обновите образ Wav2Lip на облаке и укажите новый адрес в настройках."
         ),
     )
 
@@ -223,38 +223,43 @@ def _diagnose_worker_response(
     for_refine: bool = False,
 ) -> str:
     snippet = (body or "")[:800].lower()
-    if "jupyter" in snippet or "jupyter server" in snippet:
-        port_hint = ""
-        if "-8888." in worker_url or ":8888" in worker_url:
-            port_hint = " Похоже, открыт порт 8888 (Jupyter), а нужен HTTP-порт воркера MouthSync (обычно 8000)."
+    wrong_service = (
+        "jupyter" in snippet
+        or "jupyter server" in snippet
+        or "gradio" in snippet
+        or "-8888." in worker_url
+        or ":8888" in worker_url
+    )
+    if wrong_service:
         return (
-            "По этому URL отвечает Jupyter, а не MouthSync worker. "
-            "Поднимите Pod с образом mouthsync-worker и Expose HTTP port 8000."
-            + port_hint
+            "По этому адресу открыт другой сервис, не MouthSync. "
+            "В настройках облака укажите URL вашего MouthSync-сервера на порту 8000."
         )
     if status_code == 404:
         if endpoint == "refine" or for_refine:
             return (
-                "Эндпоинт /refine не найден (404). Для этапа 2 нужен отдельный Pod "
-                "с образом mouthsync-worker-wav2lip (не SadTalker и не lite-воркер)."
+                "Сервер не умеет улучшать губы (этап 2). "
+                "Проверьте поле «Сервер улучшения губ» — нужен отдельный Wav2Lip-сервер, "
+                "не тот же адрес, что для этапа 1."
             )
         return (
-            "Эндпоинт /health не найден (404). URL должен вести на FastAPI-воркер MouthSync "
-            "(порт 8000), не на шаблон RunPod с Jupyter/Gradio."
+            "Сервер по этому адресу не найден или адрес указан неверно. "
+            "Проверьте URL в настройках: порт 8000, без лишнего пути в конце."
         )
     if status_code == 524 or "error code 524" in snippet or "a timeout occurred" in snippet:
         return (
-            "Таймаут HTTP-прокси RunPod (Cloudflare 524, ~100 с). SadTalker/Wav2Lip могут работать дольше — "
-            "соединение оборвалось до ответа воркера. Сократите аудио (5–15 с для теста), "
-            "используйте lite-воркер для длинных роликов или поднимите воркер без прокси RunPod "
-            "(TCP/другой хостинг). Воркер на Pod мог продолжить рендер — проверьте Logs Pod."
+            "Превышено время ожидания ответа от облака (~100 с). "
+            "Сократите аудио до 5–15 секунд для проверки или попробуйте снова позже. "
+            "Генерация на сервере могла продолжиться — посмотрите логи в панели облака."
         )
     if "<html" in snippet or "<!doctype" in snippet:
         return (
-            "Сервис вернул HTML вместо JSON API. Проверьте URL и порт прокси RunPod "
-            "(для нашего воркера — 8000, путь /health)."
+            "Сервер вернул веб-страницу вместо ответа MouthSync. "
+            "Проверьте адрес: нужен URL прокси на порту 8000."
         )
-    return body[:500] if body else f"HTTP {status_code}"
+    if body and len(body) < 500 and "detail" not in snippet:
+        return body[:500]
+    return f"Ошибка связи с сервером (код {status_code}). Проверьте адрес в настройках."
 
 
 @app.get("/health")
@@ -410,7 +415,7 @@ async def history_refine(
     if not wav2lip_url:
         raise HTTPException(
             status_code=400,
-            detail="Не задан URL Wav2Lip Pod. Укажите WAV2LIP_WORKER_URL в настройках или .env.",
+            detail="Не задан адрес сервера улучшения губ. Укажите его в настройках на странице.",
         )
 
     video_bytes = get_media_bytes(entry_id, "video_stage1", client_id=x_client_id)
@@ -439,7 +444,7 @@ async def history_refine(
     except httpx.RequestError as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Не удалось связаться с Wav2Lip {wav2lip_url}/refine: {e}",
+            detail=f"Не удалось связаться с сервером улучшения губ: {e}",
         ) from e
 
     if refine_resp.status_code != 200:
@@ -454,7 +459,7 @@ async def history_refine(
         status = 504 if refine_resp.status_code == 524 else refine_resp.status_code
         raise HTTPException(
             status_code=status,
-            detail=f"{detail} (запрос: {wav2lip_url.rstrip('/')}/refine)",
+            detail=detail,
         )
 
     meta = apply_refine(
@@ -557,7 +562,7 @@ async def wav2lip_worker_status(
             status_code=400,
             content={
                 "ok": False,
-                "detail": "Укажите URL Wav2Lip Pod в настройках UI или WAV2LIP_WORKER_URL в .env.",
+                "detail": "Укажите адрес сервера улучшения губ в настройках.",
             },
         )
 
@@ -599,27 +604,21 @@ async def wav2lip_worker_status(
             "ok": False,
             "worker_url": wav2lip_url,
             "worker": worker,
-            "detail": (
-                "Это SadTalker (этап 1). Для этапа 2 укажите отдельный Pod "
-                "с образом mouthsync-worker-wav2lip."
-            ),
+            "detail": "Это адрес этапа 1. Для этапа 2 укажите отдельный сервер улучшения губ.",
         }
     if backend and backend != "wav2lip":
         return {
             "ok": False,
             "worker_url": wav2lip_url,
             "worker": worker,
-            "detail": f"Сервер не подходит для этапа 2 (тип: {backend}).",
+            "detail": "Этот адрес не подходит для этапа 2.",
         }
     if not backend:
         return {
             "ok": False,
             "worker_url": wav2lip_url,
             "worker": worker,
-            "detail": (
-                "У этого сервера нет Wav2Lip (/refine). "
-                "Используйте образ mouthsync-worker-wav2lip."
-            ),
+            "detail": "Этот сервер не поддерживает этап 2. Нужен отдельный Wav2Lip-сервер.",
         }
 
     return {
@@ -760,7 +759,7 @@ async def generate(
     if not worker_url:
         raise HTTPException(
             status_code=503,
-            detail="WORKER_URL не задан. Укажите URL RunPod в настройках на странице или в .env.",
+            detail="Не задан адрес сервера генерации. Укажите его в настройках на странице.",
         )
 
     photo_bytes = await photo.read()
@@ -829,7 +828,7 @@ async def generate(
     except httpx.RequestError as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Не удалось связаться с воркером {worker_url}/infer: {e}",
+            detail=f"Не удалось связаться с сервером генерации: {e}",
         ) from e
 
     if resp.status_code != 200:

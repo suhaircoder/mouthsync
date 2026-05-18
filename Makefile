@@ -34,16 +34,16 @@ help:
 	@echo "  make ps              container status"
 	@echo "  make build           build compose images only"
 	@echo ""
-	@echo "Local worker (no RunPod), in .env: WORKER_URL=http://worker:8000"
-	@echo "  make local-up        worker in Docker, logs in terminal"
-	@echo "  make local-detached  same in background (usual local run)"
+	@echo "Local stack (backend + UI, workers on RunPod):"
+	@echo "  make local-up        logs in terminal"
+	@echo "  make local-detached  background (usual local run)"
 	@echo "  make local-down      stop stack with worker"
 	@echo "  make local-ps        container status"
 	@echo "  make local-logs      logs"
 	@echo ""
 	@echo "Workers (registry: workers/README.md):"
 	@echo "  make worker-list              table of all backends"
-	@echo "  make worker-<id>-publish      lite | sadtalker | wav2lip | ..."
+	@echo "  make worker-<id>-publish      sadtalker | wav2lip"
 	@echo "  make worker-publish-ready     production-ready workers only"
 	@echo "  ./workers/new-worker.sh       new scaffold from _template"
 
@@ -73,19 +73,19 @@ build: env-check
 	$(COMPOSE) build
 
 local-up: env-check
-	$(COMPOSE) --profile local-worker up --build
+	$(COMPOSE) up --build
 
 local-detached: env-check
-	$(COMPOSE) --profile local-worker up -d --build
+	$(COMPOSE) up -d --build
 
 local-down:
-	$(COMPOSE) --profile local-worker down
+	$(COMPOSE) down
 
 local-ps:
-	$(COMPOSE) --profile local-worker ps
+	$(COMPOSE) ps
 
 local-logs:
-	$(COMPOSE) --profile local-worker logs -f
+	$(COMPOSE) logs -f
 
 hub-check:
 	@command -v docker >/dev/null || (echo "[make] Docker is required" && exit 1)

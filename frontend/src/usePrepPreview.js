@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { apiHeaders } from "./clientId.js";
+import { useToast } from "./ToastProvider.jsx";
 
 function parseApiError(body, status) {
   if (!body) return `Ошибка ${status}`;
@@ -26,6 +27,8 @@ export function usePrepPreview({
   const [previewError, setPreviewError] = useState(null);
   const [originalUrl, setOriginalUrl] = useState(null);
   const abortRef = useRef(null);
+  const lastErrorToastRef = useRef("");
+  const toast = useToast();
   const optionsKey = JSON.stringify(options);
 
   useEffect(() => {
@@ -82,8 +85,13 @@ export function usePrepPreview({
       } catch (err) {
         if (err?.name === "AbortError") return;
         if (!ac.signal.aborted) {
+          const message = err?.message || String(err);
           setPreviewData(null);
-          setPreviewError(err?.message || String(err));
+          setPreviewError(null);
+          if (lastErrorToastRef.current !== message) {
+            lastErrorToastRef.current = message;
+            toast.error(message);
+          }
         }
       } finally {
         if (!ac.signal.aborted) setPreviewLoading(false);
