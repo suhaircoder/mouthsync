@@ -2,23 +2,47 @@
 
 **Lip-sync** from a portrait and audio → short video. Local **backend** (`backend/`, FastAPI) and **UI** (`frontend/`, React + Vite); heavy rendering runs on a **remote worker**. Configure via `.env` at the repo root (template: `.env.example`).
 
-**Worker registry (Wav2Lip, MuseTalk, SadTalker, …):** [workers/README.md](./workers/README.md)
+**Worker registry:** [workers/README.md](./workers/README.md)
 
-**Full RunPod walkthrough (from scratch):** [RUNPOD.md](./RUNPOD.md) *(Russian)*
+**Deploy (macOS / Windows / Linux):** [DEPLOY.md](./DEPLOY.md)
+
+**Full RunPod walkthrough (from scratch):** [RUNPOD.md](./RUNPOD.md)
+
+---
+
+## Docker images
+
+Replace **`YOUR_DOCKER_USER`** with your [Docker Hub](https://hub.docker.com/) username (`export DOCKER_USER=...`).
+
+| Image | Role | README | Docker Hub |
+|-------|------|--------|------------|
+| `mouthsync-backend` | API, prep, history (local compose) | [backend/README.md](./backend/README.md) | optional — [hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-backend](https://hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-backend) |
+| `mouthsync-frontend` | Web UI (local compose) | [frontend/README.md](./frontend/README.md) | optional — [hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-frontend](https://hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-frontend) |
+| `mouthsync-worker-sadtalker` | **Stage 1** — talking head | [runpod-worker-sadtalker/README.md](./runpod-worker-sadtalker/README.md) | [hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-worker-sadtalker](https://hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-worker-sadtalker) |
+| `mouthsync-worker-wav2lip` | **Stage 2** — lip refine | [runpod-worker-wav2lip/README.md](./runpod-worker-wav2lip/README.md) | [hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-worker-wav2lip](https://hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-worker-wav2lip) |
+
+Publish RunPod workers:
+
+```bash
+export DOCKER_USER=your_docker_hub_username
+make hub-login
+make worker-publish-ready   # sadtalker + wav2lip
+```
 
 ---
 
 ## Prerequisites
 
-Install these **before** running MouthSync locally. The recommended path uses **Docker** so you do not need Python or Node on the host.
+Install tools **before** the first run. Step-by-step per OS: **[DEPLOY.md](./DEPLOY.md)**.
 
-| Tool | Required for | Install / docs |
-|------|----------------|----------------|
-| **[Git](https://git-scm.com/downloads)** | Clone the repo | [git-scm.com/downloads](https://git-scm.com/downloads) |
-| **[Docker](https://docs.docker.com/get-docker/)** | Backend, UI, MongoDB | [Docker Desktop](https://docs.docker.com/desktop/) (macOS/Windows) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux) |
-| **[Docker Compose](https://docs.docker.com/compose/)** | Orchestrate services (`docker compose`) | Included with Docker Desktop; on Linux, see [Compose install](https://docs.docker.com/compose/install/) |
-| **[GNU Make](https://www.gnu.org/software/make/)** | Shortcuts (`make local-detached`, `make env`, …) | macOS: Xcode Command Line Tools (`xcode-select --install`); Linux: `apt install make` / `dnf install make`; Windows: [Make for Windows](https://gnuwin32.sourceforge.net/packages/make.htm) or use WSL |
-| **[curl](https://curl.se/download.html)** *(optional)* | Health checks on backend/worker | Usually preinstalled on macOS/Linux |
+| | macOS | Windows | Linux |
+|---|--------|---------|--------|
+| **Docker** | [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) | [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) + **WSL 2** | [Docker Engine](https://docs.docker.com/engine/install/) + [Compose](https://docs.docker.com/compose/install/linux/) |
+| **Git** | Xcode CLT / brew | [git-scm.com](https://git-scm.com/download/win) | `apt` / `dnf` |
+| **Make** | `xcode-select --install` | **WSL:** `apt install make` (recommended) | `apt install make` |
+| **Terminal** | Terminal.app / iTerm | **Ubuntu (WSL)** for bash commands | bash / zsh |
+
+You do **not** need Python or Node on the host if you use Docker for UI + backend.
 
 **For publishing worker images to RunPod** (optional until you deploy a remote worker):
 
@@ -53,7 +77,8 @@ make --version
 
 ## Quick start — run locally
 
-All commands below are run from the **`mouthsync/`** directory (next to `docker-compose.yml` and `Makefile`).
+All commands below are run from the **`mouthsync/`** directory (next to `docker-compose.yml` and `Makefile`).  
+Platform-specific notes (paths, WSL, port conflicts): **[DEPLOY.md](./DEPLOY.md)**.
 
 ### 1. Clone and configure
 

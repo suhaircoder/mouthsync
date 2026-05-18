@@ -190,7 +190,7 @@ Without a key the worker accepts requests without auth (public URL — anyone ca
 - `WORKER_API_KEY` — **your** MouthSync secret;
 - RunPod account API key — for RunPod CLI, **not** the worker.
 
-`WORKER_URL` is **not** needed on the Pod — set it in UI on your Mac.
+`WORKER_URL` is **not** needed on the Pod — set it in the MouthSync UI on your machine.
 
 ### 2.7. Other Pod settings
 
@@ -309,6 +309,8 @@ After tests: **Stop** Pod locally `make down`.
 
 Worker is on RunPod; locally you only run **UI and backend**.
 
+**macOS / Windows / Linux:** step-by-step in [DEPLOY.md](./DEPLOY.md) (on Windows, use WSL 2 + Docker Desktop).
+
 ### 3.1. `.env` file
 
 ```bash
@@ -392,7 +394,7 @@ First run may take seconds to a minute+ depending on audio length and Pod power.
 
 ```bash
 export DOCKER_USER=your_username
-make worker-publish
+make worker-publish-ready
 ```
 
 On RunPod: **Stop** → **Start** or new Pod with `:latest`.
@@ -448,6 +450,6 @@ curl http://127.0.0.1:8000/api/worker-status -H "X-Worker-Url: https://<pod>-800
 | Service | Where | Port |
 |---------|-------|------|
 | UI | your machine | 3000 |
-| Backend | Docker on Mac | 8000 |
+| Backend | local Docker | 8000 |
 | MouthSync worker | RunPod | 8000 → `...-8000.proxy.runpod.net` |
 | ~~Jupyter~~ | foreign templates | ~~8888~~ — **wrong** |

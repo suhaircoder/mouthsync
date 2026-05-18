@@ -2,10 +2,14 @@
 
 Production pipeline uses **two** workers:
 
-| Stage | ID | Directory | RunPod image |
-|-------|-----|-----------|--------------|
-| 1 — talking head | `sadtalker` | `runpod-worker-sadtalker/` | `mouthsync-worker-sadtalker` |
-| 2 — lip refine | `wav2lip` | `runpod-worker-wav2lip/` | `mouthsync-worker-wav2lip` |
+| Stage | ID | Directory | README | Docker Hub |
+|-------|-----|-----------|--------|------------|
+| 1 — talking head | `sadtalker` | `runpod-worker-sadtalker/` | [README](../runpod-worker-sadtalker/README.md) | https://hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-worker-sadtalker |
+| 2 — lip refine | `wav2lip` | `runpod-worker-wav2lip/` | [README](../runpod-worker-wav2lip/README.md) | https://hub.docker.com/r/YOUR_DOCKER_USER/mouthsync-worker-wav2lip |
+
+Replace **`YOUR_DOCKER_USER`** with your Docker Hub login.
+
+**Deploy (macOS / Windows / Linux):** [../DEPLOY.md](../DEPLOY.md)
 
 Full registry: [`registry.yaml`](./registry.yaml).
 
