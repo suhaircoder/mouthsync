@@ -8,24 +8,23 @@
 
 **Full RunPod walkthrough (from scratch):** [RUNPOD.md](./RUNPOD.md)
 
-**UI screenshots:** [screenshots/](./screenshots/) — add interface images there (see [screenshots/README.md](./screenshots/README.md) for naming).
+**UI screenshots:** [screenshots/](./screenshots/)
 
 ---
 
 ## Screenshots
 
-Add PNG/JPG files to **[`screenshots/`](./screenshots/)** and they will appear here, for example:
+| Main — upload & generate | Worker (RunPod) settings |
+|:---:|:---:|
+| ![Main screen — portrait, audio, generate](./screenshots/01-main.png) | ![Worker settings — SadTalker and Wav2Lip URLs](./screenshots/02-worker-settings.png) |
 
-<!-- Uncomment after you add files:
-![Main screen](./screenshots/01-main.png)
-![Worker settings](./screenshots/02-worker-settings.png)
-![History](./screenshots/03-history.png)
--->
+| History | Result / playback |
+|:---:|:---:|
+| ![Generation history](./screenshots/03-history.png) | ![Video result](./screenshots/04-result.png) |
 
-| | |
-|---|---|
-| *Main screen* | *History* |
-| *(add `screenshots/01-main.png`)* | *(add `screenshots/03-history.png`)* |
+| Photo & audio prep |
+|:---:|
+| ![Prep settings — face check, audio trim, gain](./screenshots/05-prep-settings.png) |
 
 ---
 
