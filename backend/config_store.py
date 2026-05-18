@@ -69,6 +69,9 @@ def _normalize_photo(raw: dict[str, Any] | None) -> dict[str, Any]:
             raw.get("face_require_single", raw.get("faceRequireSingle", True))
         ),
         "face_auto_crop": bool(raw.get("face_auto_crop", raw.get("faceAutoCrop", True))),
+        "face_align_enabled": bool(
+            raw.get("face_align_enabled", raw.get("faceAlignEnabled", False))
+        ),
         "max_edge_px": int(raw.get("max_edge_px", raw.get("maxEdge", 2048))),
         "min_face_size_ratio": float(
             raw.get("min_face_size_ratio", raw.get("minFaceSizeRatio", 0.12))
@@ -115,6 +118,7 @@ def photo_for_api(stored: dict[str, Any]) -> dict[str, Any]:
         "faceCheckEnabled": stored.get("face_check_enabled", True),
         "faceRequireSingle": stored.get("face_require_single", True),
         "faceAutoCrop": stored.get("face_auto_crop", True),
+        "faceAlignEnabled": stored.get("face_align_enabled", False),
         "maxEdge": stored.get("max_edge_px", 2048),
         "minFaceSizeRatio": stored.get("min_face_size_ratio", 0.12),
         "brightness": stored.get("brightness", 1.0),

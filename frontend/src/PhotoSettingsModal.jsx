@@ -99,6 +99,17 @@ export default function PhotoSettingsModal({
                 />
                 Обрезка по лицу (рот в кадре)
               </label>
+              <label className="field__checkbox">
+                <input
+                  type="checkbox"
+                  checked={photoOptions.faceAlignEnabled}
+                  disabled={faceOff}
+                  onChange={(e) =>
+                    setPhotoField("faceAlignEnabled", e.target.checked)
+                  }
+                />
+                Выровнять по глазам (face alignment)
+              </label>
               <label className="field field--compact">
                 <span className="field__label">
                   Мин. доля лица ({Math.round(photoOptions.minFaceSizeRatio * 100)}%)

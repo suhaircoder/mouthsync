@@ -478,7 +478,7 @@ export default function App() {
   const photoSettingsSummary = !photoOptions.prepEnabled
     ? "Обработка выкл — исходный файл"
     : photoOptions.faceCheckEnabled
-      ? `Лицо ${Math.round(photoOptions.minFaceSizeRatio * 100)}%${photoOptions.faceAutoCrop ? " · обрезка" : ""} · JPEG ${photoOptions.jpegQuality}`
+      ? `Лицо ${Math.round(photoOptions.minFaceSizeRatio * 100)}%${photoOptions.faceAutoCrop ? " · обрезка" : ""}${photoOptions.faceAlignEnabled ? " · выравн." : ""} · JPEG ${photoOptions.jpegQuality}`
       : `Лицо: выкл · ярк. ${photoOptions.brightness.toFixed(1)}`;
 
   const audioSettingsSummary = !audioOptions.prepEnabled

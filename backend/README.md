@@ -30,7 +30,7 @@ curl -sS http://127.0.0.1:8000/health
 
 ## Responsibilities
 
-- Face check and **photo prep** (crop, brightness, …)
+- Face check and **photo prep** (crop, eye alignment, brightness, …)
 - **Audio prep** (trim, gain, resample, …)
 - `POST /api/generate` → SadTalker worker
 - `POST /api/history/{id}/refine` → Wav2Lip worker

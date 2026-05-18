@@ -5,6 +5,7 @@ export const DEFAULT_PHOTO_OPTIONS = {
   faceCheckEnabled: true,
   faceRequireSingle: true,
   faceAutoCrop: true,
+  faceAlignEnabled: false,
   maxEdge: 2048,
   minFaceSizeRatio: 0.08,
   brightness: 1,
@@ -24,6 +25,7 @@ export function normalizePhotoOptions(raw) {
     faceCheckEnabled: Boolean(base.faceCheckEnabled),
     faceRequireSingle: Boolean(base.faceRequireSingle),
     faceAutoCrop: Boolean(base.faceAutoCrop),
+    faceAlignEnabled: Boolean(base.faceAlignEnabled),
     maxEdge: clamp(Number(base.maxEdge) || 2048, 512, 4096),
     minFaceSizeRatio: clamp(Number(base.minFaceSizeRatio) || 0.08, 0.03, 0.5),
     brightness: clamp(Number(base.brightness) || 1, 0.5, 2),
@@ -57,6 +59,7 @@ export function photoOptionsFromServer(data) {
     faceCheckEnabled: data.face_check_enabled,
     faceRequireSingle: data.face_require_single,
     faceAutoCrop: data.face_auto_crop,
+    faceAlignEnabled: data.face_align_enabled,
     maxEdge: data.max_edge_px,
     minFaceSizeRatio: data.min_face_size_ratio,
     brightness: data.brightness,
@@ -73,6 +76,7 @@ export function photoOptionsForApi(options) {
     faceCheckEnabled: o.faceCheckEnabled,
     faceRequireSingle: o.faceRequireSingle,
     faceAutoCrop: o.faceAutoCrop,
+    faceAlignEnabled: o.faceAlignEnabled,
     maxEdge: o.maxEdge,
     minFaceSizeRatio: o.minFaceSizeRatio,
     brightness: o.brightness,
@@ -88,6 +92,7 @@ export function appendPhotoOptionsToFormData(form, options) {
   form.append("face_check_enabled", o.faceCheckEnabled ? "1" : "0");
   form.append("face_require_single", o.faceRequireSingle ? "1" : "0");
   form.append("face_auto_crop", o.faceAutoCrop ? "1" : "0");
+  form.append("face_align_enabled", o.faceAlignEnabled ? "1" : "0");
   form.append("photo_max_edge", String(o.maxEdge));
   form.append("face_min_size_ratio", String(o.minFaceSizeRatio));
   form.append("photo_brightness", String(o.brightness));

@@ -12,9 +12,12 @@ import numpy as np
 from PIL import Image, ImageEnhance, ImageOps, UnidentifiedImageError
 
 _cascades: list[cv2.CascadeClassifier] | None = None
+_eye_cascade: cv2.CascadeClassifier | None = None
 
 # Haar minSize only — separate from user «min face share» validation
 _DETECT_MIN_SIZE_RATIO = 0.06
+_ALIGN_MIN_ANGLE_DEG = 0.8
+_ALIGN_MAX_ANGLE_DEG = 28.0
 
 
 class FaceCheckError(ValueError):
@@ -28,6 +31,7 @@ class PhotoPrepOptions:
     face_check_enabled: bool = True
     face_require_single: bool = True
     face_auto_crop: bool = True
+    face_align_enabled: bool = False
     max_edge_px: int = 2048
     min_face_size_ratio: float = 0.08
     brightness: float = 1.0
@@ -57,6 +61,7 @@ def defaults_from_env() -> PhotoPrepOptions:
         face_check_enabled=_env_flag("FACE_CHECK_ENABLED"),
         face_require_single=_env_flag("FACE_REQUIRE_SINGLE"),
         face_auto_crop=_env_flag("FACE_AUTO_CROP", "1"),
+        face_align_enabled=_env_flag("FACE_ALIGN_ENABLED", "0"),
         max_edge_px=_env_int("PHOTO_MAX_EDGE", 2048),
         min_face_size_ratio=_env_float("FACE_MIN_SIZE_RATIO", 0.08),
         brightness=_env_float("PHOTO_BRIGHTNESS", 1.0),
@@ -83,6 +88,7 @@ def options_from_form(
     face_check_enabled: str | None = None,
     face_require_single: str | None = None,
     face_auto_crop: str | None = None,
+    face_align_enabled: str | None = None,
     photo_max_edge: str | None = None,
     face_min_size_ratio: str | None = None,
     photo_brightness: str | None = None,
@@ -112,6 +118,7 @@ def options_from_form(
         face_check_enabled=_parse_bool(face_check_enabled, base.face_check_enabled),
         face_require_single=_parse_bool(face_require_single, base.face_require_single),
         face_auto_crop=_parse_bool(face_auto_crop, base.face_auto_crop),
+        face_align_enabled=_parse_bool(face_align_enabled, base.face_align_enabled),
         max_edge_px=_int(photo_max_edge, base.max_edge_px, 512, 4096),
         min_face_size_ratio=_float(face_min_size_ratio, base.min_face_size_ratio, 0.03, 0.5),
         brightness=_float(photo_brightness, base.brightness, 0.5, 2.0),
@@ -287,6 +294,99 @@ def _crop_image_to_face(img: Image.Image, box: tuple[int, int, int, int]) -> Ima
     return img.crop((x, y, x + cw, y + ch))
 
 
+def _get_eye_cascade() -> cv2.CascadeClassifier:
+    global _eye_cascade
+    if _eye_cascade is None:
+        for name in (
+            "haarcascade_eye_tree_eyeglasses.xml",
+            "haarcascade_eye.xml",
+        ):
+            path = cv2.data.haarcascades + name
+            cascade = cv2.CascadeClassifier(path)
+            if not cascade.empty():
+                _eye_cascade = cascade
+                break
+        if _eye_cascade is None:
+            raise RuntimeError("Failed to load OpenCV eye cascade")
+    return _eye_cascade
+
+
+def _detect_eye_centers(
+    rgb: np.ndarray,
+    face_box: tuple[int, int, int, int],
+) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    """Return left and right eye centers in full-image coordinates."""
+    fx, fy, fw, fh = face_box
+    roi = rgb[fy : fy + fh, fx : fx + fw]
+    if roi.size == 0:
+        return None
+    gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+    gray = cv2.equalizeHist(gray)
+    upper = gray[: max(1, int(fh * 0.68)), :]
+    min_dim = max(12, int(min(fw, fh) * 0.08))
+    eyes_raw = _get_eye_cascade().detectMultiScale(
+        upper,
+        scaleFactor=1.06,
+        minNeighbors=8,
+        minSize=(min_dim, min_dim),
+        flags=cv2.CASCADE_SCALE_IMAGE,
+    )
+    if len(eyes_raw) < 2:
+        return None
+
+    centers: list[tuple[float, float, float]] = []
+    for ex, ey, ew, eh in eyes_raw:
+        cx = fx + ex + ew * 0.5
+        cy = fy + ey + eh * 0.5
+        centers.append((cx, cy, float(ew * eh)))
+    centers.sort(key=lambda c: c[0])
+    left = centers[0]
+    right = centers[-1]
+    if right[0] - left[0] < fw * 0.22:
+        return None
+    return (left[0], left[1]), (right[0], right[1])
+
+
+def _eye_line_angle_deg(
+    left: tuple[float, float],
+    right: tuple[float, float],
+) -> float:
+    dx = right[0] - left[0]
+    dy = right[1] - left[1]
+    if dx <= 1.0:
+        return 0.0
+    return float(np.degrees(np.arctan2(dy, dx)))
+
+
+def _rotate_image(img: Image.Image, angle_deg: float) -> Image.Image:
+    """Rotate so the eye line is horizontal (OpenCV angle is counter-clockwise)."""
+    if abs(angle_deg) < _ALIGN_MIN_ANGLE_DEG:
+        return img
+    w, h = img.size
+    center = (w * 0.5, h * 0.5)
+    matrix = cv2.getRotationMatrix2D(center, -angle_deg, 1.0)
+    rgb = np.asarray(img)
+    rotated = cv2.warpAffine(
+        rgb,
+        matrix,
+        (w, h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+    return Image.fromarray(rotated)
+
+
+def _align_image_by_face_box(img: Image.Image, face_box: tuple[int, int, int, int]) -> Image.Image:
+    rgb = np.asarray(img)
+    eyes = _detect_eye_centers(rgb, face_box)
+    if eyes is None:
+        return img
+    angle = _eye_line_angle_deg(*eyes)
+    if abs(angle) < _ALIGN_MIN_ANGLE_DEG or abs(angle) > _ALIGN_MAX_ANGLE_DEG:
+        return img
+    return _rotate_image(img, angle)
+
+
 def _validate_and_crop_face(img: Image.Image, options: PhotoPrepOptions) -> Image.Image:
     rgb = np.asarray(img)
     h, w = rgb.shape[:2]
@@ -313,6 +413,23 @@ def _validate_and_crop_face(img: Image.Image, options: PhotoPrepOptions) -> Imag
             "multiple_faces",
             f"Найдено несколько лиц ({len(boxes)}). Используйте фото с одним человеком.",
         )
+
+    if options.face_align_enabled:
+        img = _align_image_by_face_box(img, main)
+        rgb = np.asarray(img)
+        h, w = rgb.shape[:2]
+        boxes = _detect_face_boxes_raw(rgb)
+        if not boxes:
+            raise FaceCheckError(
+                "no_face",
+                "После выравнивания лицо не найдено. Попробуйте другое фото или отключите выравнивание.",
+            )
+        main = max(boxes, key=_box_area)
+        if options.face_require_single and len(boxes) > 1:
+            raise FaceCheckError(
+                "multiple_faces",
+                f"Найдено несколько лиц ({len(boxes)}). Используйте фото с одним человеком.",
+            )
 
     if options.face_auto_crop:
         return _crop_image_to_face(img, main)
